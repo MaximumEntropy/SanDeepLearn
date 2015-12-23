@@ -1,11 +1,12 @@
 #!/usr/bin/env python
 
-from Optimizers import Optimizer
-from Layer import SoftMaxLayer
+from optimizers import Optimizer
+from layer import SoftMaxLayer
 
 import theano
 import theano.tensor as T
 import numpy as np
+theano.config.floatX = 'float32'
 
 __author__ = "Sandeep Subramanian"
 __version__ = "1.0"
@@ -14,14 +15,26 @@ __email__ = "sandeep.subramanian@gmail.com"
 
 class SequentialNetwork:
 
-	def __init__(self):
+	def __init__(self, input_type='2d', output_type='single_class'):
 
 		"""
 		Constructor for a sequential network
 		"""
 
-		self.input = T.fmatrix()
-		self.output = T.imatrix()
+		if input_type == '2d' :
+			self.input = T.fmatrix()
+		elif input_type == '3d':
+			self.input = T.tensor3()
+		elif input_type == '4d':
+			self.input = T.tensor4()
+
+		if output_type == 'single_class':
+			self.output = T.ivector()
+		elif output_type == 'multiple_class':
+			self.output = T.imatrix()
+		elif output_type == 'regression':
+			self.output = T.fvector()
+
 		self.layers = []
 		self.params = []
 		self.compiled = False
@@ -31,17 +44,13 @@ class SequentialNetwork:
 		"""
 		Add a layer to the network
 		"""
-
-		if len(self.layers) != 0 and not isinstance(layer_object, SoftMaxLayer):
-			if layer_object.input_dim != self.layers[-1].output_dim:
-				raise ValueError("Layer shape mismatch input dimension must be of size %d" %(self.layers[-1].output_dim))
 		
 		self.layers.append(layer_object)
 		
 		if not isinstance(layer_object, SoftMaxLayer):
-			self.params.extend([layer_object.weights, layer_object.bias])
+			self.params.extend(layer_object.params)
 
-	def compile(self, loss='squared_error', optimizer='sgd'):
+	def compile(self, loss='squared_error', optimizer='sgd', lr=0.01):
 
 		"""
 		Compile the network with a given loss function and optimization method
@@ -71,7 +80,7 @@ class SequentialNetwork:
 		if optimizer == 'sgd':
 			updates = Optimizer().sgd(loss, 
 				self.params, 
-				lr=0.01
+				lr=lr
 			)
 		
 		else:
@@ -121,7 +130,6 @@ class SequentialNetwork:
 				costs.append(cost)
 			
 			print 'Epoch %d Training Loss : %f ' %(epoch, np.mean(costs))
-
 			print 'Validation error : %f ' %(self.evaluate(valid_x, valid_y))
 			print 'Test error : %f ' %(self.evaluate(test_x, test_y))
 

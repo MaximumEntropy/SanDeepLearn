@@ -3,25 +3,53 @@
 # MNIST Multilayer Perceptron
 
 ```
-train, dev, test = pickle.load(gzip.open('data/mnist.pkl.gz', 'rb'))
+train_x, train_y, dev_x, dev_y, test_x, test_y = get_data(dataset='mnist')
 
-train_x, train_y = train[0], train[1].astype(np.int32)
-dev_x, dev_y = dev[0], dev[1].astype(np.int32)
-test_x, test_y = test[0], test[1].astype(np.int32)
-
-train_yy = np.zeros((train_y.shape[0], 10)).astype(np.int32)
-dev_yy = np.zeros((dev_y.shape[0], 10)).astype(np.int32)
-test_yy = np.zeros((test_y.shape[0], 10)).astype(np.int32)
-
-for ind, val in enumerate(train_y):
-	train_yy[ind][val] = 1
-
-network = SequentialNetwork()
-network.add(FullyConnectedLayer(train_x.shape[1], 500, activation='sigmoid'))
-network.add(FullyConnectedLayer(500, 10, activation='sigmoid'))
+network = SequentialNetwork(input_type='2d', output_type='multiple_class')
+network.add(FullyConnectedLayer(train_x.shape[1], 500, activation='tanh'))
+network.add(FullyConnectedLayer(500, 10, activation='tanh'))
 network.add(SoftMaxLayer(hierarchical=False))
 
 network.compile(loss='categorical_crossentropy')
 
-network.train(train_x, train_yy, nb_epochs=500, valid_x=dev_x, valid_y=dev_y, test_x=test_x, test_y=test_y)
+network.train(train_x, train_y, nb_epochs=10, valid_x=dev_x, valid_y=dev_y, test_x=test_x, test_y=test_y)
+
 ```
+
+# MNIST Le-Net 5
+
+train_x, train_y, dev_x, dev_y, test_x, test_y = get_data(dataset='mnist')
+
+network = SequentialNetwork(input_type='4d', output_type='multiple_class')
+
+convolution_layer0 = Convolution2DLayer(
+    input_height=train_x.shape[2], 
+    input_width=train_x.shape[3], 
+    filter_width=5, 
+    filter_height=5, 
+    num_filters=20, 
+    num_feature_maps=1, 
+    flatten=False, 
+    wide=False
+)
+
+convolution_layer1 = Convolution2DLayer(
+    input_height=convolution_layer0.output_height_shape, 
+    input_width=convolution_layer0.output_width_shape, 
+    filter_width=5, 
+    filter_height=5, 
+    num_filters=50, 
+    num_feature_maps=20, 
+    flatten=True, 
+    wide=False
+)
+
+network.add(convolution_layer0)
+network.add(convolution_layer1)
+network.add(FullyConnectedLayer(800, 500, activation='tanh'))
+network.add(FullyConnectedLayer(500, 10, activation='tanh'))
+network.add(SoftMaxLayer(hierarchical=False))
+
+network.compile(loss='categorical_crossentropy', lr=0.1)
+
+network.train(train_x, train_y, nb_epochs=10, valid_x=dev_x, valid_y=dev_y, test_x=test_x, test_y=test_y)
