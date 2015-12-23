@@ -18,6 +18,7 @@ network.train(train_x, train_y, nb_epochs=10, valid_x=dev_x, valid_y=dev_y, test
 
 # MNIST Le-Net 5
 
+```
 train_x, train_y, dev_x, dev_y, test_x, test_y = get_data(dataset='mnist')
 
 network = SequentialNetwork(input_type='4d', output_type='multiple_class')
@@ -53,3 +54,4 @@ network.add(SoftMaxLayer(hierarchical=False))
 network.compile(loss='categorical_crossentropy', lr=0.1)
 
 network.train(train_x, train_y, nb_epochs=10, valid_x=dev_x, valid_y=dev_y, test_x=test_x, test_y=test_y)
+```
