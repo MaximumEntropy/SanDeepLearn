@@ -59,37 +59,42 @@ network.train(train_x, train_y, nb_epochs=10, valid_x=dev_x, valid_y=dev_y, test
 
 # Transmembrane helix prediction using Recurrent Neural Networks
 
-train_x, train_y, dev_x, dev_y, test_x, test_y = get_data(dataset='mnist')
-
 # Recurrent Neural Network
 
+```
 network = RecurrentNetwork(input_type='1d', output_type='single_class', embedding=True)
 network.add(EmbeddingLayer(20, 50, name='embedding'))
 network.add(RNN(50, 50, name='rnn'))
 network.add(FullyConnectedLayer(50, 1, name='fc'))
 network.compile(lr=0.01)
 network.train(train_x, train_y, batch_size='online', nb_epochs=10)
+```
 
 # Long Short-term Memory Network
 
+```
 network = RecurrentNetwork(input_type='1d', output_type='single_class', embedding=True)
 network.add(EmbeddingLayer(20, 50, name='embedding'))
 network.add(LSTM(50, 50, name='rnn'))
 network.add(FullyConnectedLayer(50, 1, name='fc'))
 network.compile(lr=0.01)
 network.train(train_x, train_y, batch_size='online', nb_epochs=10)
+```
 
 # Bidirectional Recurrent Neural Network
 
+```
 network = RecurrentNetwork(input_type='1d', output_type='single_class', embedding=True)
 network.add(EmbeddingLayer(20, 50, name='embedding'))
 network.add(BiRNN(RNN(50, 50, name='forward_rnn'), RNN(50, 50, name='backward_rnn')))
 network.add(FullyConnectedLayer(100, 1, name='fc'))
 network.compile(lr=0.001)
 network.train(train_x, train_y, batch_size='online', nb_epochs=10)
+```
 
 # Bidirectional Long Short-term Memory Network
 
+```
 network = RecurrentNetwork(input_type='1d', output_type='single_class', embedding=True)
 network.add(EmbeddingLayer(20, 50, name='embedding'))
 network.add(BiLSTM(LSTM(50, 50, name='forward_lstm'), LSTM(50, 50, name='backward_lstm')))
