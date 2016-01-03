@@ -3,6 +3,7 @@
 from optimizers import Optimizer
 from layer import SoftMaxLayer, EmbeddingLayer
 from utils import get_weights, get_bias
+from theano.misc import pkl_utils
 
 import theano
 import theano.tensor as T
@@ -43,6 +44,14 @@ class RecurrentNetwork:
 		self.layers = []
 		self.params = []
 		self.compiled = False
+
+	def save(self, filename):
+
+		"""
+		Save the network as a pickle file
+		"""
+
+		
 
 	def add(self, layer_object):
 
