@@ -61,6 +61,6 @@ def unit_test_conv():
 	network.train(train_x, train_y, nb_epochs=10, valid_x=dev_x, valid_y=dev_y, test_x=test_x, test_y=test_y)
 
 print 'Testing Multi-layer Perceptron ...'
-#unit_test_mlp()
+unit_test_mlp()
 print 'Testing Convolutional Neural Network ...'
 unit_test_conv()

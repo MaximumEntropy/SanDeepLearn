@@ -110,6 +110,14 @@ class SequentialNetwork:
 
 		return (np.argmax(self.f_eval(input_x), axis=1) != input_y).mean()
 
+	def predict(self, input_x):
+
+		"""
+		Returns a prediction for a given input
+		"""
+		
+		return self.f_eval(input_x)
+
 
 	def train(self, train_x, train_y, valid_x=None, valid_y=None, test_x=None,  test_y=None, nb_epochs=20, batch_size=100):
 

@@ -26,7 +26,7 @@ def get_data(dataset='mnist'):
 
 	return train_x, train_yy, dev_x, dev_y, test_x, test_y
 
-def get_weights(low, high, shape):
+def get_weights(low, high, shape, name):
 
 	"""
 	Returns a weight matrix based on the activation function for that layer
@@ -36,12 +36,12 @@ def get_weights(low, high, shape):
 	"""
 
 	weights = np.random.uniform(low=low, high=high, size=shape).astype(theano.config.floatX)
-	return theano.shared(weights, borrow=True)
+	return theano.shared(weights, borrow=True, name=name)
 
-def get_bias(output_dim):
+def get_bias(output_dim, name):
 
 	"""
 	Returns a bias vector for a layer initialized with zeros
 	"""
 
-	return theano.shared(np.zeros(output_dim, ).astype(theano.config.floatX), borrow=True)
+	return theano.shared(np.zeros(output_dim, ).astype(theano.config.floatX), borrow=True, name=name)
