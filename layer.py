@@ -74,6 +74,19 @@ class SoftMaxLayer:
 		if not self.hierarchical:
 			return T.nnet.softmax(input)
 
+'''
+class DropoutMask:
+
+	"""
+	Dropout Mask
+	"""
+
+	def __init__(self, dropout_rate=0.5):
+
+		self.dropout_rate = dropout_rate
+
+	def link(self, input):
+'''
 
 
 class Convolution2DLayer:

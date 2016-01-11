@@ -5,7 +5,7 @@ from utils import get_data
 import numpy as np
 import pickle, gzip
 
-def unit_test_mlp():
+def unit_test_mlp(dropout_test=False, optimizer='sgd'):
 
 	train_x, train_y, dev_x, dev_y, test_x, test_y = get_data(dataset='mnist')
 
@@ -14,11 +14,18 @@ def unit_test_mlp():
 	network.add(FullyConnectedLayer(500, 10, activation='tanh'))
 	network.add(SoftMaxLayer(hierarchical=False))
 
-	network.compile(loss='categorical_crossentropy')
+	if optimizer == 'sgd':
+		network.compile(loss='categorical_crossentropy', optimizer='sgd')
+
+	elif optimizer == 'adagrad':
+		network.compile(loss='categorical_crossentropy', optimizer='adagrad')
+
+	elif optimizer == 'rmsprop':
+		network.compile(loss='categorical_crossentropy', optimizer='rmsprop')
 
 	network.train(train_x, train_y, nb_epochs=10, valid_x=dev_x, valid_y=dev_y, test_x=test_x, test_y=test_y)
 
-def unit_test_conv():
+def unit_test_conv(dropout_test=False, optimizer='sgd'):
 
 	train_x, train_y, dev_x, dev_y, test_x, test_y = get_data(dataset='mnist')
 
@@ -56,11 +63,21 @@ def unit_test_conv():
 	network.add(FullyConnectedLayer(500, 10, activation='tanh'))
 	network.add(SoftMaxLayer(hierarchical=False))
 
-	network.compile(loss='categorical_crossentropy', lr=0.1)
+	if optimizer == 'sgd':
+		print 'Training with SGD ...'
+		network.compile(loss='categorical_crossentropy', lr=0.1, optimizer='sgd')
+
+	elif optimizer == 'adagrad':
+		print 'Training with Adagrad ...'
+		network.compile(loss='categorical_crossentropy', lr=0.01, optimizer='adagrad')
+
+	elif optimizer == 'rmsprop':
+		print 'Training with RMSprop ...'
+		network.compile(loss='categorical_crossentropy', lr=0.001, optimizer='rmsprop')
 
 	network.train(train_x, train_y, nb_epochs=10, valid_x=dev_x, valid_y=dev_y, test_x=test_x, test_y=test_y)
 
-print 'Testing Multi-layer Perceptron ...'
-unit_test_mlp()
+#print 'Testing Multi-layer Perceptron ...'
+#unit_test_mlp(optimizer='rmsprop')
 print 'Testing Convolutional Neural Network ...'
-unit_test_conv()
+unit_test_conv(optimizer='rmsprop')

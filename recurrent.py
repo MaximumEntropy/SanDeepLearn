@@ -92,8 +92,23 @@ class RecurrentNetwork:
 		# Select optimization strategy
 
 		if optimizer == 'sgd':
-			updates = Optimizer().sgd(loss, 
+			updates = Optimizer().sgd(
+				loss, 
 				self.params, 
+				lr=lr
+			)
+
+		elif optimizer == 'adagrad':
+			updates = Optimizer().adagrad(
+				loss,
+				self.params,
+				lr=lr
+			)
+		
+		elif optimizer == 'rmsprop':
+			updates = Optimizer().rmsprop(
+				loss,
+				self.params,
 				lr=lr
 			)
 		

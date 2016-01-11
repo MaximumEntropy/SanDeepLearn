@@ -10,7 +10,7 @@ network.add(FullyConnectedLayer(train_x.shape[1], 500, activation='tanh'))
 network.add(FullyConnectedLayer(500, 10, activation='tanh'))
 network.add(SoftMaxLayer(hierarchical=False))
 
-network.compile(loss='categorical_crossentropy')
+network.compile(loss='categorical_crossentropy', optimizer='adagrad')
 
 network.train(train_x, train_y, nb_epochs=10, valid_x=dev_x, valid_y=dev_y, test_x=test_x, test_y=test_y)
 
@@ -51,7 +51,7 @@ network.add(FullyConnectedLayer(800, 500, activation='tanh'))
 network.add(FullyConnectedLayer(500, 10, activation='tanh'))
 network.add(SoftMaxLayer(hierarchical=False))
 
-network.compile(loss='categorical_crossentropy', lr=0.1)
+network.compile(loss='categorical_crossentropy', lr=0.001, optimizer='rmsprop')
 
 network.train(train_x, train_y, nb_epochs=10, valid_x=dev_x, valid_y=dev_y, test_x=test_x, test_y=test_y)
 
@@ -66,8 +66,9 @@ network = RecurrentNetwork(input_type='1d', output_type='single_class', embeddin
 network.add(EmbeddingLayer(20, 50, name='embedding'))
 network.add(RNN(50, 50, name='rnn'))
 network.add(FullyConnectedLayer(50, 1, name='fc'))
-network.compile(lr=0.01)
+network.compile(lr=0.01, optimizier='sgd')
 network.train(train_x, train_y, batch_size='online', nb_epochs=10)
+
 ```
 
 # Long Short-term Memory Network
@@ -77,8 +78,9 @@ network = RecurrentNetwork(input_type='1d', output_type='single_class', embeddin
 network.add(EmbeddingLayer(20, 50, name='embedding'))
 network.add(LSTM(50, 50, name='rnn'))
 network.add(FullyConnectedLayer(50, 1, name='fc'))
-network.compile(lr=0.01)
+network.compile(lr=0.01, optimizer='sgd')
 network.train(train_x, train_y, batch_size='online', nb_epochs=10)
+
 ```
 
 # Bidirectional Recurrent Neural Network
@@ -88,8 +90,9 @@ network = RecurrentNetwork(input_type='1d', output_type='single_class', embeddin
 network.add(EmbeddingLayer(20, 50, name='embedding'))
 network.add(BiRNN(RNN(50, 50, name='forward_rnn'), RNN(50, 50, name='backward_rnn')))
 network.add(FullyConnectedLayer(100, 1, name='fc'))
-network.compile(lr=0.001)
+network.compile(lr=0.001, optimizier='sgd')
 network.train(train_x, train_y, batch_size='online', nb_epochs=10)
+
 ```
 
 # Bidirectional Long Short-term Memory Network
@@ -99,7 +102,7 @@ network = RecurrentNetwork(input_type='1d', output_type='single_class', embeddin
 network.add(EmbeddingLayer(20, 50, name='embedding'))
 network.add(BiLSTM(LSTM(50, 50, name='forward_lstm'), LSTM(50, 50, name='backward_lstm')))
 network.add(FullyConnectedLayer(100, 1, name='fc'))
-network.compile(lr=0.001)
+network.compile(lr=0.001, optimizer='sgd')
 network.train(train_x, train_y, batch_size='online', nb_epochs=10)
 
 ```
