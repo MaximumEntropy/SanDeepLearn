@@ -1,6 +1,7 @@
 from sequential import SequentialNetwork
-from layer import FullyConnectedLayer, SoftMaxLayer, Convolution2DLayer
+from layer import FullyConnectedLayer, SoftMaxLayer, Convolution2DLayer, EmbeddingLayer
 from utils import get_data
+from recurrent import RecurrentNetwork, RNN, LSTM, BiRNN, BiLSTM
 
 import numpy as np
 import pickle, gzip
@@ -23,7 +24,13 @@ def unit_test_mlp(dropout_test=False, optimizer='sgd'):
 	elif optimizer == 'rmsprop':
 		network.compile(loss='categorical_crossentropy', optimizer='rmsprop')
 
-	network.train(train_x, train_y, nb_epochs=10, valid_x=dev_x, valid_y=dev_y, test_x=test_x, test_y=test_y)
+	elif optimizer == 'adam':
+		network.compile(loss='categorical_crossentropy', optimizer='adam')
+
+	network.train(train_x, train_y, nb_epochs=10)
+
+	print 'Accuracy on dev : %f ' %((np.argmax(network.predict(dev_x), axis=1) != dev_y).mean())
+	print 'Accuracy on test : %f ' %((np.argmax(network.predict(test_x), axis=1) != test_y).mean())
 
 def unit_test_conv(dropout_test=False, optimizer='sgd'):
 
@@ -75,9 +82,38 @@ def unit_test_conv(dropout_test=False, optimizer='sgd'):
 		print 'Training with RMSprop ...'
 		network.compile(loss='categorical_crossentropy', lr=0.001, optimizer='rmsprop')
 
-	network.train(train_x, train_y, nb_epochs=10, valid_x=dev_x, valid_y=dev_y, test_x=test_x, test_y=test_y)
+	network.train(train_x, train_y, nb_epochs=10)
 
-#print 'Testing Multi-layer Perceptron ...'
-#unit_test_mlp(optimizer='rmsprop')
+	print 'Accuracy on dev : %f ' %((np.argmax(network.predict(dev_x), axis=1) != dev_y).mean())
+	print 'Accuracy on test : %f ' %((np.argmax(network.predict(test_x), axis=1) != test_y).mean())
+
+def unit_test_rnn():
+
+	train_x, train_y, dev_x, dev_y, test_x, test_y = get_data(dataset='tmh')
+
+	network = RecurrentNetwork(input_type='1d', output_type='single_class', embedding=True)
+	network.add(EmbeddingLayer(20, 50, name='embedding'))
+	network.add(RNN(50, 50, name='rnn'))
+	network.add(FullyConnectedLayer(50, 1, name='fc'))
+	network.compile(lr=0.01, optimizer='sgd')
+	network.train(train_x, train_y, batch_size='online', nb_epochs=10)
+
+def unit_test_birnn():
+	
+	train_x, train_y, dev_x, dev_y, test_x, test_y = get_data(dataset='tmh')
+
+	network = RecurrentNetwork(input_type='1d', output_type='single_class', embedding=True)
+	network.add(EmbeddingLayer(20, 50, name='embedding'))
+	network.add(BiRNN(RNN(50, 50, name='forward_rnn'), RNN(50, 50, name='backward_rnn')))
+	network.add(FullyConnectedLayer(100, 1, name='fc'))
+	network.compile(lr=0.001, optimizer='adagrad')
+	network.train(train_x, train_y, batch_size='online', nb_epochs=10)
+
+print 'Testing RNN ... '
+unit_test_rnn()
+print 'Testing BiRNN ... '
+unit_test_birnn()
+print 'Testing Multi-layer Perceptron ...'
+unit_test_mlp(optimizer='adam')
 print 'Testing Convolutional Neural Network ...'
 unit_test_conv(optimizer='rmsprop')

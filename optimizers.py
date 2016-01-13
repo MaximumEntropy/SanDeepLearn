@@ -53,7 +53,7 @@ class Optimizer:
 
     def rmsprop(self, cost, params, lr=0.01, rho=0.9, epsilon=1e-6):
         """
-        RMSProp
+        RMSProp - Root Mean Square 
         Reference - http://www.cs.toronto.edu/~tijmen/csc321/slides/lecture_slides_lec6.pdf
         """
 
@@ -69,4 +69,38 @@ class Optimizer:
             accumulated_gradient_new = accumulated_gradient * rho + gradient ** 2 * (1 - rho)
             updates.append((accumulated_gradient, accumulated_gradient_new))
             updates.append((param, param - lr * gradient / T.sqrt(accumulated_gradient_new + epsilon)))
+        return updates
+
+    def adam(self, cost, params, lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-8):
+        """
+        ADAM
+        Reference - http://arxiv.org/pdf/1412.6980v8.pdf - Page 2
+        """
+
+        lr = theano.shared(np.float32(lr).astype(theano.config.floatX))
+        epsilon = theano.shared(np.float32(epsilon).astype(theano.config.floatX))
+        beta_1 = theano.shared(np.float32(beta_1).astype(theano.config.floatX))
+        beta_2 = theano.shared(np.float32(beta_2).astype(theano.config.floatX))
+        t = theano.shared(np.float32(1.0).astype(theano.config.floatX))
+
+        gradients = T.grad(cost, params)
+
+        updates = []
+        for param, gradient in zip(params, gradients):
+            param_value = param.get_value(borrow=True)
+            m_tm_1 = theano.shared(np.zeros_like(param_value).astype(np.float32), borrow=True)
+            v_tm_1 = theano.shared(np.zeros_like(param_value).astype(np.float32), borrow=True)
+
+            m_t = beta_1 * m_tm_1 + (1 - beta_1) * gradient
+            v_t = beta_2 * v_tm_1 + (1 - beta_2) * gradient ** 2
+
+            m_hat = m_t / (1 - beta_1)
+            v_hat = v_t / (1 - beta_2)
+
+            updated_param = param - (lr * m_hat) / (T.sqrt(v_hat) + epsilon)
+            updates.append((m_tm_1, m_t))
+            updates.append((v_tm_1, v_t))
+            updates.append((param, updated_param))
+
+        updates.append((t, t + 1.0))
         return updates

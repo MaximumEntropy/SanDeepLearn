@@ -97,7 +97,14 @@ class SequentialNetwork:
 				self.params,
 				lr=lr
 			)
-		
+
+		elif optimizer == 'adam':
+			updates = Optimizer().adam(
+				loss,
+				self.params,
+				lr=lr
+			)
+
 		else:
 			raise NotImplementedError("Unknown optimization method")
 
@@ -116,25 +123,17 @@ class SequentialNetwork:
 
 		self.compiled = True
 
-	def evaluate(self, input_x, input_y):
 
-		"""
-		Evaluates the current network
-		"""
-		# __TODO__ this evaluation works only for MNIST
-
-		return (np.argmax(self.f_eval(input_x), axis=1) != input_y).mean()
-
-	def predict(self, input_x):
+	def predict(self, input):
 
 		"""
 		Returns a prediction for a given input
 		"""
 		
-		return self.f_eval(input_x)
+		return self.f_eval(input)
 
 
-	def train(self, train_x, train_y, valid_x=None, valid_y=None, test_x=None,  test_y=None, nb_epochs=20, batch_size=100):
+	def train(self, train_x, train_y, nb_epochs=20, batch_size=100):
 
 		"""
 		Train the model for the given input, number of epochs and batch size
@@ -153,6 +152,3 @@ class SequentialNetwork:
 				costs.append(cost)
 			
 			print 'Epoch %d Training Loss : %f ' %(epoch, np.mean(costs))
-			print 'Validation error : %f ' %(self.evaluate(valid_x, valid_y))
-			print 'Test error : %f ' %(self.evaluate(test_x, test_y))
-

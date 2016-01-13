@@ -4,6 +4,8 @@ import theano
 import theano.tensor as T
 import numpy as np
 import pickle, gzip
+import cPickle
+import scipy.io as sio
 
 __author__ = "Sandeep Subramanian"
 __maintainer__ = "Sandeep Subramanian"
@@ -30,7 +32,7 @@ def get_data(dataset='mnist'):
 
 	elif dataset == 'tmh':
 
-		dataset_train = sio.loadmat('data/train_dev_full_seq.mat')
+		dataset_train = sio.loadmat('data/train_dev_test_full_seq.mat')
 
 		train_x = np.array([x.squeeze().astype(np.int32) for x in dataset_train['train_x'].squeeze()])
 		train_y = np.array([x.squeeze().astype(np.int32) for x in dataset_train['train_y'].squeeze()])
@@ -60,3 +62,19 @@ def get_bias(output_dim, name):
 	"""
 
 	return theano.shared(np.zeros(output_dim, ).astype(theano.config.floatX), borrow=True, name=name)
+
+def save_network(network, filename):
+
+	"""
+	Save the network as a pickle file
+	"""
+
+	cPickle.dump(network, open(filename, 'wb'), protocol=cPickle.HIGHEST_PROTOCOL)
+
+def load_network(filename):
+
+	"""
+	Load the network pickle file into memory
+	"""
+
+	return c.cPickle.load(open(filename, 'rb'))

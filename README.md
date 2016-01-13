@@ -14,6 +14,10 @@ network.compile(loss='categorical_crossentropy', optimizer='adagrad')
 
 network.train(train_x, train_y, nb_epochs=10, valid_x=dev_x, valid_y=dev_y, test_x=test_x, test_y=test_y)
 
+print 'Accuracy on dev : %f ' %((np.argmax(network.predict(dev_x), axis=1) != dev_y).mean())
+
+print 'Accuracy on test : %f ' %((np.argmax(network.predict(test_x), axis=1) != test_y).mean())
+
 ```
 
 # MNIST Le-Net 5
@@ -55,6 +59,10 @@ network.compile(loss='categorical_crossentropy', lr=0.001, optimizer='rmsprop')
 
 network.train(train_x, train_y, nb_epochs=10, valid_x=dev_x, valid_y=dev_y, test_x=test_x, test_y=test_y)
 
+print 'Accuracy on dev : %f ' %((np.argmax(network.predict(dev_x), axis=1) != dev_y).mean())
+
+print 'Accuracy on test : %f ' %((np.argmax(network.predict(test_x), axis=1) != test_y).mean())
+
 ```
 
 # Transmembrane helix prediction using Recurrent Neural Networks
@@ -62,11 +70,15 @@ network.train(train_x, train_y, nb_epochs=10, valid_x=dev_x, valid_y=dev_y, test
 # Recurrent Neural Network
 
 ```
+train_x, train_y, dev_x, dev_y, test_x, test_y = get_data(dataset='tmh')
+
 network = RecurrentNetwork(input_type='1d', output_type='single_class', embedding=True)
 network.add(EmbeddingLayer(20, 50, name='embedding'))
 network.add(RNN(50, 50, name='rnn'))
 network.add(FullyConnectedLayer(50, 1, name='fc'))
+
 network.compile(lr=0.01, optimizier='sgd')
+
 network.train(train_x, train_y, batch_size='online', nb_epochs=10)
 
 ```
@@ -74,6 +86,8 @@ network.train(train_x, train_y, batch_size='online', nb_epochs=10)
 # Long Short-term Memory Network
 
 ```
+train_x, train_y, dev_x, dev_y, test_x, test_y = get_data(dataset='tmh')
+
 network = RecurrentNetwork(input_type='1d', output_type='single_class', embedding=True)
 network.add(EmbeddingLayer(20, 50, name='embedding'))
 network.add(LSTM(50, 50, name='rnn'))
@@ -86,6 +100,8 @@ network.train(train_x, train_y, batch_size='online', nb_epochs=10)
 # Bidirectional Recurrent Neural Network
 
 ```
+train_x, train_y, dev_x, dev_y, test_x, test_y = get_data(dataset='tmh')
+
 network = RecurrentNetwork(input_type='1d', output_type='single_class', embedding=True)
 network.add(EmbeddingLayer(20, 50, name='embedding'))
 network.add(BiRNN(RNN(50, 50, name='forward_rnn'), RNN(50, 50, name='backward_rnn')))
@@ -98,6 +114,8 @@ network.train(train_x, train_y, batch_size='online', nb_epochs=10)
 # Bidirectional Long Short-term Memory Network
 
 ```
+train_x, train_y, dev_x, dev_y, test_x, test_y = get_data(dataset='tmh')
+
 network = RecurrentNetwork(input_type='1d', output_type='single_class', embedding=True)
 network.add(EmbeddingLayer(20, 50, name='embedding'))
 network.add(BiLSTM(LSTM(50, 50, name='forward_lstm'), LSTM(50, 50, name='backward_lstm')))
