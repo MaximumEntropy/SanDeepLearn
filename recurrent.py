@@ -272,8 +272,8 @@ class LSTM:
 		self.w_oc = get_weights(high=high_sigmoid, low=low_sigmoid, shape=(output_dim, output_dim), name=name + '__w_oc')
 
 		#Initialize cell weights
-		self.w_cx = get_weights(high=high_tanh, low=low_tanh, shape=(input_dim, output_dim), name=name + '__w_ox')
-		self.w_ch = get_weights(high=high_tanh, low=low_tanh, shape=(output_dim, output_dim), name=name + '__w_ox')
+		self.w_cx = get_weights(high=high_tanh, low=low_tanh, shape=(input_dim, output_dim), name=name + '__w_cx')
+		self.w_ch = get_weights(high=high_tanh, low=low_tanh, shape=(output_dim, output_dim), name=name + '__w_ch')
 
 		#Initialize bias for every gate
 		self.b_f = get_bias(output_dim, name=name + '__b_f') 
