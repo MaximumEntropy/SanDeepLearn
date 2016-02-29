@@ -280,6 +280,7 @@ class LSTM:
 		self.b_i = get_bias(output_dim, name=name + '__b_i')
 		self.b_o = get_bias(output_dim, name=name + '__b_o')
 		self.b_c = get_bias(output_dim, name=name + '__b_c')
+		
 		self.c_0 = get_bias(output_dim, name=name + '__c_0')
 		self.h_0 = get_bias(output_dim, name=name + '__h_0')
 
@@ -311,25 +312,66 @@ class LSTM:
 		else:
 			raise NotImplementedError("Unknown return type")
 
-class BiRNN:
+class FastLSTM:
 
 	"""
-	Bidirectional Recurrent Neural Network
+	Faster Long Short-term Memory Network by using just 2 weight matrices
 	"""
 
-	def __init__(self, forward_rnn, backward_rnn):
+	def __init__(self, input_dim, output_dim, name='lstm', return_type='all'):
 
-		self.forward_rnn = forward_rnn
-		self.backward_rnn = backward_rnn
+		# __TODO__ add deep LSTM
 
-		self.params = self.forward_rnn.params + self.backward_rnn.params
+		self.input_dim = input_dim
+		self.output_dim = output_dim
+		self.return_type = return_type
+
+		low_sigmoid = -4 * np.sqrt(6. / (self.input_dim + self.output_dim))
+		high_sigmoid = 4 * np.sqrt(6. / (self.input_dim + self.output_dim))
+		
+		self.W = get_weights(high=high_sigmoid, low=low_sigmoid, shape=(input_dim, output_dim * 4), name=name + '__W')
+		self.U = get_weights(high=high_sigmoid, low=low_sigmoid, shape=(output_dim, output_dim * 4), name=name + '__U')
+		self.b = get_bias(output_dim * 4, name=name + '__b')
+
+		self.c_0 = get_bias(output_dim, name=name + '__c_0')
+		self.h_0 = get_bias(output_dim, name=name + '__h_0')
+
+		self.params = [self.W, self.U, self.b, self.c_0, self.h_0]
+
+	def _partition_weights(self, matrix, n):
+		return matrix[:, n * self.output_dim: (n+1) * self.output_dim]
 
 	def fprop(self, input):
 
-		if self.forward_rnn.return_type == 'all':
-			return T.concatenate((self.forward_rnn.fprop(input), self.backward_rnn.fprop(input[::-1])), axis=1)
-		elif self.forward_rnn.return_type == 'last':
-			return T.concatenate((self.forward_rnn.fprop(input), self.backward_rnn.fprop(input[::-1])))
+		def recurrence_helper(current_input, cell_state, recurrent_input):
+			recurrent_output = current_input + T.dot(recurrent_input, self.U)
+
+			input_activation = T.nnet.sigmoid(self._partition_weights(recurrent_output, 0))
+			forget_activation = T.nnet.sigmoid(self._partition_weights(recurrent_output, 1))
+			output_activation = T.nnet.sigmoid(self._partition_weights(recurrent_output, 2))
+			cell_activation = T.tanh(self._partition_weights(recurrent_output, 3))
+
+			cell_output = forget_activation * cell_state + input_activation * cell_activation
+
+			return [cell_output, output_activation * T.tanh(cell_output)]
+
+		pre_activation = T.dot(input.dimshuffle(1, 0, 2), self.W) + self.b
+
+		outputs_info = [T.alloc(x, input.shape[0], self.output_dim) for x in [self.c_0, self.h_0]]
+        
+		[cell_state_results, cell_output_results], updates = theano.scan(
+            fn=recurrence_helper,
+            sequences=pre_activation,
+            outputs_info=outputs_info,
+            n_steps=input.shape[1]
+        )
+
+		if self.return_type == 'all':
+			return cell_output_results
+		elif self.return_type == 'last':
+			return cell_output_results[-1]
+		else:
+			raise NotImplementedError("Unknown return type")
 
 class BiLSTM:
 
