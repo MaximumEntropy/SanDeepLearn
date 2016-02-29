@@ -14,9 +14,9 @@ network.compile(loss='categorical_crossentropy', optimizer='adagrad')
 
 network.train(train_x, train_y, nb_epochs=10, valid_x=dev_x, valid_y=dev_y, test_x=test_x, test_y=test_y)
 
-print 'Accuracy on dev : %f ' %((np.argmax(network.predict(dev_x), axis=1) != dev_y).mean())
+print 'Error on dev : %f ' %((np.argmax(network.predict(dev_x), axis=1) != dev_y).mean())
 
-print 'Accuracy on test : %f ' %((np.argmax(network.predict(test_x), axis=1) != test_y).mean())
+print 'Error on test : %f ' %((np.argmax(network.predict(test_x), axis=1) != test_y).mean())
 
 ```
 
@@ -59,9 +59,9 @@ network.compile(loss='categorical_crossentropy', lr=0.001, optimizer='rmsprop')
 
 network.train(train_x, train_y, nb_epochs=10, valid_x=dev_x, valid_y=dev_y, test_x=test_x, test_y=test_y)
 
-print 'Accuracy on dev : %f ' %((np.argmax(network.predict(dev_x), axis=1) != dev_y).mean())
+print 'Error on dev : %f ' %((np.argmax(network.predict(dev_x), axis=1) != dev_y).mean())
 
-print 'Accuracy on test : %f ' %((np.argmax(network.predict(test_x), axis=1) != test_y).mean())
+print 'Error on test : %f ' %((np.argmax(network.predict(test_x), axis=1) != test_y).mean())
 
 ```
 
