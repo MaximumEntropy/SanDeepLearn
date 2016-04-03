@@ -206,11 +206,13 @@ class RNN:
 		else:
 			raise NotImplementedError("Unknown activation")
 
-		self.weights = get_weights(high=high, low=low, shape=(input_dim, output_dim), name=name + '__weights')
-		self.recurrent_weights = get_weights(high=high, low=low, shape=(output_dim, output_dim), name=name + '__recurrent_weights')
+		self.weights = get_weights(shape=(input_dim, output_dim), name=name + '__weights')
+		self.recurrent_weights = get_weights(shape=(output_dim, output_dim), name=name + '__recurrent_weights')
 		
 		self.bias = get_bias(output_dim, name=name + '__bias')
 		self.recurrent_bias = get_bias(output_dim, name=name + '__recurrent_bias')
+
+		self.h = None
 
 		self.params = [self.weights, self.recurrent_weights, self.bias, self.recurrent_bias]
 
@@ -222,7 +224,7 @@ class RNN:
 
 		outputs_info = self.recurrent_bias
 
-		results, updates = theano.scan(
+		self.h, _ = theano.scan(
 				fn=recurrence_helper,
 				sequences=input,
 				outputs_info=self.recurrent_bias,
@@ -230,9 +232,9 @@ class RNN:
 			)
 
 		if self.return_type == 'all':
-			return results
+			return self.h
 		elif self.return_type == 'last':
-			return results[-1]
+			return self.h[-1]
 		else:
 			raise NotImplementedError("Unknown return type")
 
@@ -257,32 +259,34 @@ class LSTM:
 		high_tanh = np.sqrt(6. / (input_dim + output_dim))
 		
 		# Intialize forget gate weights
-		self.w_fx = get_weights(high=high_sigmoid, low=low_sigmoid, shape=(input_dim, output_dim), name=name + '__w_fx')
-		self.w_fh = get_weights(high=high_sigmoid, low=low_sigmoid, shape=(output_dim, output_dim), name=name + '__w_fh')
-		self.w_fc = get_weights(high=high_sigmoid, low=low_sigmoid, shape=(output_dim, output_dim), name=name + '__w_fc')
+		self.w_fx = get_weights(shape=(input_dim, output_dim), name=name + '__w_fx')
+		self.w_fh = get_weights(shape=(output_dim, output_dim), name=name + '__w_fh')
+		self.w_fc = get_weights(shape=(output_dim, output_dim), name=name + '__w_fc')
 
 		# Intialize input gate weights
-		self.w_ix = get_weights(high=high_sigmoid, low=low_sigmoid, shape=(input_dim, output_dim), name=name + '__w_ix')
+		self.w_ix = get_weights(shape=(input_dim, output_dim), name=name + '__w_ix')
 		self.w_ih = get_weights(high=high_sigmoid, low=low_sigmoid, shape=(output_dim, output_dim), name=name + '__w_ih')
 		self.w_ic = get_weights(high=high_sigmoid, low=low_sigmoid, shape=(output_dim, output_dim), name=name + '__w_ic')
 
 		# Intialize output gate weights
-		self.w_ox = get_weights(high=high_sigmoid, low=low_sigmoid, shape=(input_dim, output_dim), name=name + '__w_ox')
-		self.w_oh = get_weights(high=high_sigmoid, low=low_sigmoid, shape=(output_dim, output_dim), name=name + '__w_oh')
-		self.w_oc = get_weights(high=high_sigmoid, low=low_sigmoid, shape=(output_dim, output_dim), name=name + '__w_oc')
+		self.w_ox = get_weights(shape=(input_dim, output_dim), name=name + '__w_ox')
+		self.w_oh = get_weights(shape=(output_dim, output_dim), name=name + '__w_oh')
+		self.w_oc = get_weights(shape=(output_dim, output_dim), name=name + '__w_oc')
 
-		#Initialize cell weights
-		self.w_cx = get_weights(high=high_tanh, low=low_tanh, shape=(input_dim, output_dim), name=name + '__w_cx')
-		self.w_ch = get_weights(high=high_tanh, low=low_tanh, shape=(output_dim, output_dim), name=name + '__w_ch')
+		# Initialize cell weights
+		self.w_cx = get_weights(shape=(input_dim, output_dim), name=name + '__w_cx')
+		self.w_ch = get_weights(shape=(output_dim, output_dim), name=name + '__w_ch')
 
-		#Initialize bias for every gate
-		self.b_f = get_bias(output_dim, name=name + '__b_f') 
+		# Initialize bias for every gate
+		self.b_f = get_bias(output_dim, name=name + '__b_f')
 		self.b_i = get_bias(output_dim, name=name + '__b_i')
 		self.b_o = get_bias(output_dim, name=name + '__b_o')
 		self.b_c = get_bias(output_dim, name=name + '__b_c')
 		
 		self.c_0 = get_bias(output_dim, name=name + '__c_0')
 		self.h_0 = get_bias(output_dim, name=name + '__h_0')
+
+		self.h = None
 
 		self.params = [self.w_fx, self.w_fh, self.w_fc, self.w_ix, self.w_ih, self.w_ic, self.w_ox, self.w_oh, self.w_oc, self.w_cx, self.w_ch, self.b_f, self.b_i, self.b_o, self.b_c, self.c_0, self.h_0]
 
@@ -298,7 +302,7 @@ class LSTM:
 			return [cell_state, cell_output]
 
 		outputs_info = [self.c_0, self.h_0]
-		[cell_state_results, cell_output_results], updates = theano.scan(
+		[_, self.h], updates = theano.scan(
             fn=recurrence_helper,
             sequences=input,
             outputs_info=outputs_info,
@@ -306,9 +310,9 @@ class LSTM:
         )
 
 		if self.return_type == 'all':
-			return cell_output_results
+			return self.h
 		elif self.return_type == 'last':
-			return cell_output_results[-1]
+			return self.h[-1]
 		else:
 			raise NotImplementedError("Unknown return type")
 
@@ -329,12 +333,14 @@ class FastLSTM:
 		low_sigmoid = -4 * np.sqrt(6. / (self.input_dim + self.output_dim))
 		high_sigmoid = 4 * np.sqrt(6. / (self.input_dim + self.output_dim))
 		
-		self.W = get_weights(high=high_sigmoid, low=low_sigmoid, shape=(input_dim, output_dim * 4), name=name + '__W')
-		self.U = get_weights(high=high_sigmoid, low=low_sigmoid, shape=(output_dim, output_dim * 4), name=name + '__U')
+		self.W = get_weights(shape=(input_dim, output_dim * 4), name=name + '__W')
+		self.U = get_weights(shape=(output_dim, output_dim * 4), name=name + '__U')
 		self.b = get_bias(output_dim * 4, name=name + '__b')
 
 		self.c_0 = get_bias(output_dim, name=name + '__c_0')
 		self.h_0 = get_bias(output_dim, name=name + '__h_0')
+
+		self.h = None
 
 		self.params = [self.W, self.U, self.b, self.c_0, self.h_0]
 
@@ -359,7 +365,7 @@ class FastLSTM:
 
 		outputs_info = [T.alloc(x, input.shape[0], self.output_dim) for x in [self.c_0, self.h_0]]
         
-		[cell_state_results, cell_output_results], updates = theano.scan(
+		[_, self.h], updates = theano.scan(
             fn=recurrence_helper,
             sequences=pre_activation,
             outputs_info=outputs_info,
@@ -367,11 +373,33 @@ class FastLSTM:
         )
 
 		if self.return_type == 'all':
-			return cell_output_results
+			return self.h
 		elif self.return_type == 'last':
-			return cell_output_results[-1]
+			return self.h[-1]
 		else:
 			raise NotImplementedError("Unknown return type")
+
+class BiRNN:
+
+	"""
+	Bidirectional Recurrent Neural Network
+	"""
+
+	def __init__(self, forward_rnn, backward_rnn):
+
+		self.forward_rnn = forward_rnn
+		self.backward_rnn = backward_rnn
+
+		self.params = self.forward_rnn.params + self.backward_rnn.params
+
+	def fprop(self, input):
+
+		assert self.forward_rnn.return_type == self.backward_rnn.return_type
+
+		if self.forward_rnn.return_type == 'all':
+			return T.concatenate((self.forward_rnn.fprop(input), self.backward_rnn.fprop(input[::-1])), axis=1)
+		elif self.backward_rnn.return_type == 'last':
+			return T.concatenate((self.forward_rnn.fprop(input), self.backward_rnn.fprop(input[::-1])))
 
 class BiLSTM:
 
@@ -388,6 +416,8 @@ class BiLSTM:
 
 	def fprop(self, input):
 
+		assert self.forward_lstm.return_type == self.backward_lstm.return_type
+		
 		if self.forward_lstm.return_type == 'all':
 			return T.concatenate((self.forward_lstm.fprop(input), self.backward_lstm.fprop(input[::-1])), axis=1)
 		elif self.forward_lstm.return_type == 'last':
