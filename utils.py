@@ -43,17 +43,31 @@ def get_data(dataset='mnist'):
 
 		return train_x, train_y, dev_x, dev_y, test_x, test_y
 
-def get_weights(low, high, shape, name):
+def get_weights(shape, name):
 
 	"""
-	Returns a weight matrix based on the activation function for that layer
+	Returns a weight matrix for the Sigmoid, Tan Hyperbolic and Linear activation functions
 
 	Initialization Strategy: http://deeplearning.net/tutorial/mlp.html
 
 	"""
+	drange = np.sqrt(6. / (np.sum(shape)))
+	weights = drange * np.random.uniform(low=-1.0, high=1.0, size=shape)
+	return theano.shared(np.array(weights).astype(np.float32), borrow=True, name=name)
 
-	weights = np.random.uniform(low=low, high=high, size=shape).astype(theano.config.floatX)
+def get_relu_weights(shape, name):
+
+	"""
+	
+	Returns a weight matrix for the ReLU activation function
+	
+	Initialization Strategy: http://arxiv.org/pdf/1502.01852v1.pdf
+	
+	"""
+
+	weights = np.random.normal(loc=0, scale=np.sqrt(2.0 / (shape[0] + shape[1])), size=shape).astype(theano.config.floatX)
 	return theano.shared(weights, borrow=True, name=name)
+
 
 def get_bias(output_dim, name):
 
@@ -62,6 +76,18 @@ def get_bias(output_dim, name):
 	"""
 
 	return theano.shared(np.zeros(output_dim, ).astype(theano.config.floatX), borrow=True, name=name)
+
+def get_highway_bias(output_dim, name):
+
+	"""
+
+	Returns a bias vector specific to highway networks. The vector is initialized with negative values.
+
+	Reference - http://arxiv.org/pdf/1505.00387v2.pdf
+
+	"""
+
+	return theano.shared((np.zeros(output_dim, ) - 3).astype(theano.config.floatX), borrow=True, name=name) 
 
 def save_network(network, filename):
 
