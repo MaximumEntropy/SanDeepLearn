@@ -39,16 +39,16 @@ class SequentialNetwork:
 		self.params = []
 		self.compiled = False
 
-	def add(self, layer_object):
+	def add(self, layer):
 
 		"""
 		Add a layer to the network
 		"""
 		
-		self.layers.append(layer_object)
+		self.layers.append(layer)
 		
-		if not isinstance(layer_object, SoftMaxLayer):
-			self.params.extend(layer_object.params)
+		if hasattr(layer, 'params'):
+			self.params.extend(layer.params)
 
 	def compile(self, loss='squared_error', optimizer='sgd', lr=0.01):
 
@@ -60,7 +60,7 @@ class SequentialNetwork:
 
 		prev_activation = self.input
 
-		for ind, layer in enumerate(self.layers):
+		for layer in self.layers:
 
 			activation = layer.fprop(prev_activation)
 			prev_activation = activation
@@ -129,6 +129,9 @@ class SequentialNetwork:
 		"""
 		Returns a prediction for a given input
 		"""
+		for layer in self.layers:
+			if hasattr(layer, 'is_training'):
+				layer.is_training = False
 		
 		return self.f_eval(input)
 
@@ -138,6 +141,10 @@ class SequentialNetwork:
 		"""
 		Train the model for the given input, number of epochs and batch size
 		"""
+		for layer in self.layers:
+			if hasattr(layer, 'is_training'):
+				layer.is_training = True
+
 		if not self.compiled:
 			raise NotCompiledError("Network hasn't been compiled yet.")
 			return

@@ -1,17 +1,18 @@
 #!/usr/bin/env python
 
-from utils import get_weights, get_bias
+from utils import get_weights, get_bias, get_highway_bias, get_relu_weights
 
 import theano
 import theano.tensor as T
 from theano.tensor.signal import downsample
 import numpy as np
-
+from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 
 __author__ = "Sandeep Subramanian"
 __maintainer__ = "Sandeep Subramanian"
 __version__ = "1.0"
 __email__ = "sandeep.subramanian@gmail.com"
+
 
 class FullyConnectedLayer:
 
@@ -35,6 +36,11 @@ class FullyConnectedLayer:
 			self.activation = T.tanh
 			low = -1 * np.sqrt(6. / (input_dim + output_dim))
 			high = np.sqrt(6. / (input_dim + output_dim))
+
+		elif activation == 'relu':
+			self.activation = lambda x: T.maximum(0, x)
+			low = -4 * np.sqrt(6. / (input_dim + output_dim))
+			high = 4 * np.sqrt(6. / (input_dim + output_dim))
 		
 		elif activation == 'linear':
 			self.activation = None
@@ -42,8 +48,12 @@ class FullyConnectedLayer:
 		else:
 			raise NotImplementedError("Unknown activation")
 
-		# Initialize weights & biases for this layer		
-		self.weights = get_weights(low, high, (input_dim, output_dim), name=name + '__weights')
+		# Initialize weights & biases for this layer
+		if activation == 'relu':
+			self.weights = get_relu_weights((input_dim, output_dim), name=name + '__weights')
+		else:	
+			self.weights = get_weights(shape=(input_dim, output_dim), name=name + '__weights')
+
 		self.bias = get_bias(output_dim, name=name + '__bias')
 		self.params = [self.weights, self.bias]
 
@@ -52,10 +62,30 @@ class FullyConnectedLayer:
 
 		# Propogate the input through the layer
 		linear_activation = T.dot(input, self.weights) + self.bias
+
 		if self.activation == 'linear':
 			return linear_activation
 		else:
 			return self.activation(linear_activation)
+
+
+class DropoutLayer:
+
+	"""
+	Dropout layer Reference - https://www.cs.toronto.edu/~hinton/absps/JMLRdropout.pdf
+	"""
+
+	def __init__(self, dropout_rate=0.5):
+
+		self.dropout_rate = dropout_rate
+		self.rng = np.random.RandomState(1234)
+		self.srng = T.shared_randomstreams.RandomStreams(self.rng.randint(1337))
+
+	def fprop(self, input):
+
+		dropout_mask = self.srng.binomial(n=1, p=self.dropout_rate, size=linear_activation.shape, dtype=theano.config.floatX)
+		return input * dropout_mask
+
 
 class SoftMaxLayer:
 
@@ -73,20 +103,6 @@ class SoftMaxLayer:
 
 		if not self.hierarchical:
 			return T.nnet.softmax(input)
-
-'''
-class DropoutMask:
-
-	"""
-	Dropout Mask
-	"""
-
-	def __init__(self, dropout_rate=0.5):
-
-		self.dropout_rate = dropout_rate
-
-	def link(self, input):
-'''
 
 
 class Convolution2DLayer:
@@ -129,7 +145,7 @@ class Convolution2DLayer:
 	    self.filter_shape = (num_filters, num_feature_maps, filter_height, filter_width)
 	    
 	    # Get filters and bias
-	    self.filters = get_weights(low=low, high=high, shape=self.filter_shape, name=name + '__filters')
+	    self.filters = get_weights(shape=self.filter_shape, name=name + '__filters')
 	    self.bias = get_bias(self.num_filters, name=name + '__bias')
 	    self.params = [self.filters, self.bias]
 	    
@@ -174,14 +190,154 @@ class EmbeddingLayer:
 		self.output_dim = output_dim
 		self.pretrained = pretrained
 
-		self.embedding = get_weights(low=-1.0, high=1.0, shape=(input_dim, output_dim), name=name + '__embedding')
-
 		if self.pretrained is not None:
 			assert input_dim == pretrained.shape[0] and output_dim == pretrained.shape[1]
 			self.embedding = theano.shared(pretrained.astype(np.float32), borrow=True, name=name + '__pretrained_embedding')
-		
+		else:
+			self.embedding = theano.shared(np.random.uniform(low=-1.0, high=1.0, size=(input_dim, output_dim)).astype(np.float32), name=name + '__embedding', borrow=True)
 		self.params = [self.embedding]
 
 	def fprop(self, input):
 
 		return self.embedding[input]
+
+
+class MaxoutLayer:
+
+	"""
+	Maxout Layer 
+	Reference - http://jmlr.csail.mit.edu/proceedings/papers/v28/goodfellow13.pdf
+	"""
+
+	def __init__(self, input_dim, pool_size, dropout_rate=None, name='maxout'):
+
+		self.input_dim = input_dim
+		self.pool_size = pool_size
+		self.output_dim = np.ceil(self.input_dim / self.pool_size)
+		self.is_training = True
+		self.dropout_rate = dropout_rate
+		self.rng = np.random.RandomState(1234)
+		self.srng = T.shared_randomstreams.RandomStreams(self.rng.randint(1337))
+
+		self.weights = get_weights(shape=(self.input_dim, self.input_dim), name=name + '__weights')
+		self.bias = get_bias(self.input_dim, name=name + '__bias')
+
+		self.params = [self.weights, self.bias]
+
+	def fprop(self, input, is_training=True):
+
+		cur_max = None
+		linear_activation = T.dot(input, self.weights) + self.bias
+		
+		# If dropout is enabled and the network is training, use the dropout mask before applying the non-linearity
+		if self.dropout_rate is not None and self.is_training:
+			dropout_mask = self.srng.binomial(n=1, p=1.0-self.dropout_rate, size=linear_activation.shape, dtype=theano.config.floatX)
+			linear_activation = linear_activation * dropout_mask
+		
+		# If dropout is enabled and the network is being used for predictions, don't apply the dropout mask and scale the activation by the dropout rate
+		elif self.dropout_rate is not None and not is_training:
+			linear_activation = linear_activation / dropout_rate
+
+		for i in xrange(self.pool_size):
+			activation_subset = linear_activation[:,i::self.pool_size]
+			if cur_max is None:
+				cur_max = activation_subset
+			else:
+				cur_max = T.maximum(cur_max, activation_subset)
+
+		return cur_max
+
+
+class DropConnectLayer:
+
+	# THIS IS EXPERIMENT AND HASN'T BEEN COMPLETED YET
+
+	"""
+	DropConnect Layer
+	Reference - http://www.matthewzeiler.com/pubs/icml2013/icml2013.pdf
+	"""
+
+	def __init__(self, input_dim, output_dim, drop_rate=0.3, activation='sigmoid', name='dropconnect'):
+
+		self.input_dim = input_dim
+		self.output_dim = output_dim
+		self.drop_rate = drop_rate
+
+		# Set the activation function for this layer
+		if activation == 'sigmoid':
+			self.activation = T.nnet.sigmoid
+			low = -4 * np.sqrt(6. / (input_dim + output_dim))
+			high = 4 * np.sqrt(6. / (input_dim + output_dim))
+
+		elif activation == 'tanh':
+			self.activation = T.tanh
+			low = -1 * np.sqrt(6. / (input_dim + output_dim))
+			high = np.sqrt(6. / (input_dim + output_dim))
+		
+		elif activation == 'linear':
+			self.activation = None
+		
+		else:
+			raise NotImplementedError("Unknown activation")
+
+		# Initialize weights & biases for this layer		
+		self.weights = get_weights(shape=(input_dim, output_dim), name=name + '__weights')
+		self.bias = get_bias(output_dim, name=name + '__bias')
+		self.params = [self.weights, self.bias]
+
+
+class HighwayNetworkLayer:
+
+	# THIS IS EXPERIMENT AND DOES NOT WORK RIGHT NOW
+
+	"""
+	HighwayNetwork Layer by Jurgen Schmidhuber
+	Reference - http://arxiv.org/pdf/1505.00387v2.pdf & http://arxiv.org/pdf/1507.06228v2.pdf
+	"""
+
+	def __init__(self, input_dim, output_dim, activation='sigmoid', name='fully_connected'):
+
+		"""
+		Highway Network Layer
+		"""
+
+		# Set input and output dimensions
+		self.input_dim = input_dim
+		self.output_dim = output_dim
+
+		# Set the activation function for this layer
+		if activation == 'sigmoid':
+			self.activation = T.nnet.sigmoid
+			low = -4 * np.sqrt(6. / (input_dim + output_dim))
+			high = 4 * np.sqrt(6. / (input_dim + output_dim))
+
+		elif activation == 'tanh':
+			self.activation = T.tanh
+			low = -1 * np.sqrt(6. / (input_dim + output_dim))
+			high = np.sqrt(6. / (input_dim + output_dim))
+
+		elif activation == 'relu':
+			self.activation = T.nnet.relu
+			low = -4 * np.sqrt(6. / (input_dim + output_dim))
+			high = 4 * np.sqrt(6. / (input_dim + output_dim))
+		
+		elif activation == 'linear':
+			self.activation = None
+		
+		else:
+			raise NotImplementedError("Unknown activation")
+	
+		self.weights = get_relu_weights((input_dim, output_dim), name=name + '__weights')
+		self.gating_weights = get_weights(shape=(input_dim, output_dim), name=name + '__weights') # Transform gate
+
+		self.bias = get_bias(output_dim, name=name + '__bias')
+		self.gating_bias = get_highway_bias(output_dim, name=name + '__gating_bias')
+		self.params = [self.weights, self.gating_weights, self.gating_bias, self.bias]
+
+	def fprop(self, input):
+
+		# Propogate the input through the layer
+		gate_activation = T.nnet.sigmoid(T.dot(input, self.gating_weights) + self.gating_bias)
+		layer_activation = self.activation(T.dot(input, self.weights) + self.bias)
+		
+		return layer_activation * gate_activation * (1.0 - gate_activation)
