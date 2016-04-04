@@ -265,8 +265,8 @@ class LSTM:
 
 		# Intialize input gate weights
 		self.w_ix = get_weights(shape=(input_dim, output_dim), name=name + '__w_ix')
-		self.w_ih = get_weights(high=high_sigmoid, low=low_sigmoid, shape=(output_dim, output_dim), name=name + '__w_ih')
-		self.w_ic = get_weights(high=high_sigmoid, low=low_sigmoid, shape=(output_dim, output_dim), name=name + '__w_ic')
+		self.w_ih = get_weights(shape=(output_dim, output_dim), name=name + '__w_ih')
+		self.w_ic = get_weights(shape=(output_dim, output_dim), name=name + '__w_ic')
 
 		# Intialize output gate weights
 		self.w_ox = get_weights(shape=(input_dim, output_dim), name=name + '__w_ox')
