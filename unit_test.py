@@ -144,24 +144,24 @@ def unit_test_lstm():
 
 	train_x, train_y, dev_x, dev_y, test_x, test_y = get_data(dataset='tmh')
 
-	train_x = train_x.reshape((-1, 10, np.max([x.shape for x in train_x])))
+	# train_x = train_x.reshape((-1, 10, np.max([x.shape for x in train_x])))
 
-	network = RecurrentNetwork(input_type='2d', output_type='single_class', embedding=True)
+	network = RecurrentNetwork(input_type='1d', output_type='single_class', embedding=True)
 	network.add(EmbeddingLayer(20, 50, name='embedding'))
-	network.add(FastLSTM(50, 50, name='forward_rnn'))
+	network.add(LSTM(50, 100, name='forward_rnn'))
 	network.add(FullyConnectedLayer(100, 1, name='fc'))
 	network.compile(lr=0.001, optimizer='adam')
 	network.train(train_x, train_y, batch_size='online', nb_epochs=10)
 
-print 'Testing RNN ... '
-unit_test_rnn()
+#print 'Testing RNN ... '
+#unit_test_rnn()
 #print 'Testing BiRNN ... '
 #unit_test_birnn()
 #print 'Testing Highway Network'
 #unit_test_highway_network()
-print 'Testing Multi-layer Perceptron ...'
-unit_test_mlp(optimizer='sgd')
-print 'Testing Convolutional Neural Network ...'
-unit_test_conv(optimizer='rmsprop')
-#print 'Testing Fast LSTM'
-#unit_test_lstm()
+#print 'Testing Multi-layer Perceptron ...'
+#unit_test_mlp(optimizer='sgd')
+#print 'Testing Convolutional Neural Network ...'
+#unit_test_conv(optimizer='rmsprop')
+print 'Testing LSTM'
+unit_test_lstm()

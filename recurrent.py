@@ -251,12 +251,6 @@ class LSTM:
 		self.input_dim = input_dim
 		self.output_dim = output_dim
 		self.return_type = return_type
-
-		low_sigmoid = -4 * np.sqrt(6. / (self.input_dim + self.output_dim))
-		high_sigmoid = 4 * np.sqrt(6. / (self.input_dim + self.output_dim))
-
-		low_tanh = -1.0 * np.sqrt(6. / (input_dim + output_dim))
-		high_tanh = np.sqrt(6. / (input_dim + output_dim))
 		
 		# Intialize forget gate weights
 		self.w_fx = get_weights(shape=(input_dim, output_dim), name=name + '__w_fx')
@@ -296,7 +290,7 @@ class LSTM:
 
 			input_activation = T.nnet.sigmoid(T.dot(current_input, self.w_ix) + T.dot(recurrent_input, self.w_ih) + T.dot(cell_state, self.w_ic) + self.b_i)
 			forget_activation = T.nnet.sigmoid(T.dot(current_input, self.w_fx) + T.dot(recurrent_input, self.w_fh) + T.dot(cell_state, self.w_fc) + self.b_f)
-			cell_activation = forget_activation * cell_state + input_activation * T.tanh(T.dot(self.w_cx, current_input) + T.dot(self.w_ch, recurrent_input) + self.b_c)
+			cell_activation = forget_activation * cell_state + input_activation * T.tanh(T.dot(current_input, self.w_cx) + T.dot(recurrent_input, self.w_ch) + self.b_c)
 			output_activation = T.nnet.sigmoid(T.dot(current_input, self.w_ox) + T.dot(recurrent_input, self.w_oh) + T.dot(cell_state, self.w_oc) + self.b_o)
 			cell_output = output_activation * T.tanh(cell_activation)
 			return [cell_state, cell_output]
