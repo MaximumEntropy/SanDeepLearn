@@ -36,7 +36,7 @@ class FullyConnectedLayer:
 		elif activation == 'relu':
 			self.activation = lambda x: T.maximum(0, x)
 
-		elif self.activation == 'softmax':
+		elif activation == 'softmax':
 			self.activation == T.nnet.softmax
 		
 		elif activation == 'linear':
