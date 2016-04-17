@@ -29,18 +29,15 @@ class FullyConnectedLayer:
 		# Set the activation function for this layer
 		if activation == 'sigmoid':
 			self.activation = T.nnet.sigmoid
-			low = -4 * np.sqrt(6. / (input_dim + output_dim))
-			high = 4 * np.sqrt(6. / (input_dim + output_dim))
 
 		elif activation == 'tanh':
 			self.activation = T.tanh
-			low = -1 * np.sqrt(6. / (input_dim + output_dim))
-			high = np.sqrt(6. / (input_dim + output_dim))
 
 		elif activation == 'relu':
 			self.activation = lambda x: T.maximum(0, x)
-			low = -4 * np.sqrt(6. / (input_dim + output_dim))
-			high = 4 * np.sqrt(6. / (input_dim + output_dim))
+
+		elif self.activation == 'softmax':
+			self.activation == T.nnet.softmax
 		
 		elif activation == 'linear':
 			self.activation = None
