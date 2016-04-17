@@ -14,11 +14,13 @@ class Optimizer:
     Optimization methods for backpropagation
     """
 
-    def __init__(self):
+    def __init__(self, clip=5.0):
 
         """
-        __TODO__ add gradient clipping
+        Initialize Optimizer with gradient clipping norm
         """
+
+        self.clip = clip
 
     def sgd(self, cost, params, lr=0.01):
         """
@@ -26,7 +28,10 @@ class Optimizer:
         """
         lr = theano.shared(np.float32(lr).astype(theano.config.floatX))
 
-        gradients = T.grad(cost, params)
+        gradients = T.grad(
+            theano.gradient.grad_clip(cost, -1 * self.clip, self.clip),
+            params
+        )
 
         updates = []
         for param, gradient in zip(params, gradients):
@@ -41,7 +46,10 @@ class Optimizer:
         lr = theano.shared(np.float32(lr).astype(theano.config.floatX))
         epsilon = theano.shared(np.float32(epsilon).astype(theano.config.floatX))
 
-        gradients = T.grad(cost, params)
+        gradients = T.grad(
+            theano.gradient.grad_clip(cost, -1 * self.clip, self.clip),
+            params
+        )
 
         updates = []
         for param, gradient in zip(params, gradients):
@@ -61,7 +69,10 @@ class Optimizer:
         epsilon = theano.shared(np.float32(epsilon).astype(theano.config.floatX))
         rho = theano.shared(np.float32(rho).astype(theano.config.floatX))
 
-        gradients = T.grad(cost, params)
+        gradients = T.grad(
+            theano.gradient.grad_clip(cost, -1 * self.clip, self.clip),
+            params
+        )
 
         updates = []
         for param, gradient in zip(params, gradients):
@@ -83,7 +94,10 @@ class Optimizer:
         beta_2 = theano.shared(np.float32(beta_2).astype(theano.config.floatX))
         t = theano.shared(np.float32(1.0).astype(theano.config.floatX))
 
-        gradients = T.grad(cost, params)
+        gradients = T.grad(
+            theano.gradient.grad_clip(cost, -1 * self.clip, self.clip),
+            params
+        )
 
         updates = []
         for param, gradient in zip(params, gradients):
