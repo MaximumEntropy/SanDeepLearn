@@ -261,6 +261,115 @@ class LSTM:
 class GRU:
     """Gated Recurrent Unit."""
 
+    # http://www.wildml.com/2015/10/recurrent-neural-network-tutorial-part-4-implementing-a-grulstm-rnn-with-python-and-theano/
+    def __init__(
+        self,
+        input_dim,
+        output_dim,
+        embedding=False,
+        name='gru',
+        return_type='all',
+        batch_input=False
+    ):
+        """Initialize weights and biases."""
+        self.input_dim = input_dim
+        self.output_dim = output_dim
+        self.return_type = return_type
+        self.batch_input = batch_input
+
+        self.w_zx = get_weights(
+            shape=(input_dim, output_dim),
+            name=name + '__w_fx'
+        )
+        self.w_zh = get_weights(
+            shape=(output_dim, output_dim),
+            name=name + '__w_fh'
+        )
+
+        self.w_rx = get_weights(
+            shape=(input_dim, output_dim),
+            name=name + '__w_ix'
+        )
+        self.w_rh = get_weights(
+            shape=(output_dim, output_dim),
+            name=name + '__w_ih'
+        )
+
+        self.w_ox = get_weights(
+            shape=(input_dim, output_dim),
+            name=name + '__w_ox'
+        )
+        self.w_oh = get_weights(
+            shape=(output_dim, output_dim),
+            name=name + '__w_oh'
+        )
+
+        # Initialize bias for every gate
+        self.b_z = get_bias(output_dim, name=name + '__b_f')
+        self.b_r = get_bias(output_dim, name=name + '__b_i')
+        self.b_o = get_bias(output_dim, name=name + '__b_o')
+
+        self.h_0 = get_bias(output_dim, name=name + '__h_0')
+
+        self.h = None
+
+        self.params = [
+            self.w_zx,
+            self.w_zh,
+            self.w_rx,
+            self.w_rh,
+            self.w_ox,
+            self.w_oh,
+            self.b_z,
+            self.b_r,
+            self.b_o,
+            self.h_0
+        ]
+
+    def fprop(self, input):
+        """Propogate the input through the LSTM."""
+        def recurrence_helper(x_t, h_tm1):
+            z_t = T.nnet.sigmoid(
+                T.dot(x_t, self.w_zx) +
+                T.dot(h_tm1, self.w_zh) +
+                self.b_z
+            )
+            r_t = T.nnet.sigmoid(
+                T.dot(x_t, self.w_rx) +
+                T.dot(h_tm1, self.w_rh) +
+                self.b_r
+            )
+            o_t = T.tanh(
+                T.dot(x_t, self.w_ox) +
+                T.dot((h_tm1 * r_t), self.w_oh) +
+                self.b_o
+            )
+            h_t = (1 - z_t) * o_t + z_t * h_tm1
+            return h_t
+
+        if self.batch_input:
+            input = input.dimshuffle(1, 0, 2)
+            outputs_info = T.alloc(
+                self.h_0,
+                input.shape[1],
+                self.output_dim
+            )
+        else:
+            outputs_info = self.h_0
+        self.h, _ = theano.scan(
+            fn=recurrence_helper,
+            sequences=input,
+            outputs_info=outputs_info,
+            n_steps=input.shape[0]
+        )
+
+        if self.return_type == 'all':
+            return self.h
+        elif self.return_type == 'last':
+            return self.h[-1]
+        else:
+            raise NotImplementedError("Unknown return type")
+
 
 class FastLSTM:
     """Faster LSTM by using just 2 weight matrices."""
