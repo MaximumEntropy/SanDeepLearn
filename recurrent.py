@@ -21,7 +21,8 @@ class RNN:
         output_dim,
         activation='sigmoid',
         embedding=False, name='rnn',
-        return_type='all'
+        return_type='all',
+        batch_input=False
     ):
         """Initialize weights and biases."""
         # __TODO__ add parameter for number of layers
@@ -29,7 +30,7 @@ class RNN:
         self.input_dim = input_dim
         self.output_dim = output_dim
         self.return_type = return_type
-
+        self.batch_input = batch_input
         # Set the activation function for this layer
         if activation == 'sigmoid':
             self.activation = T.nnet.sigmoid
@@ -53,9 +54,9 @@ class RNN:
         )
 
         self.bias = get_bias(output_dim, name=name + '__bias')
-        self.recurrent_bias = get_bias(
+        self.h_0 = get_bias(
             output_dim,
-            name=name + '__recurrent_bias'
+            name=name + '__h_0'
         )
 
         self.h = None
@@ -64,7 +65,7 @@ class RNN:
             self.weights,
             self.recurrent_weights,
             self.bias,
-            self.recurrent_bias
+            self.h_0
         ]
 
     def fprop(self, input):
@@ -77,10 +78,19 @@ class RNN:
                 self.bias
             )
 
+        if self.batch_input:
+            input = input.dimshuffle(1, 0, 2)
+            outputs_info = T.alloc(
+                self.h_0,
+                input.shape[1],
+                self.output_dim
+            )
+        else:
+            outputs_info = self.h_0
         self.h, _ = theano.scan(
             fn=recurrence_helper,
             sequences=input,
-            outputs_info=self.recurrent_bias,
+            outputs_info=outputs_info,
             n_steps=input.shape[0]
         )
 
@@ -101,13 +111,14 @@ class LSTM:
         output_dim,
         embedding=False,
         name='lstm',
-        return_type='all'
+        return_type='all',
+        batch_input=False
     ):
         """Initialize weights and biases."""
         self.input_dim = input_dim
         self.output_dim = output_dim
         self.return_type = return_type
-
+        self.batch_input = batch_input
         # Intialize forget gate weights
         self.w_fx = get_weights(
             shape=(input_dim, output_dim),
@@ -220,7 +231,18 @@ class LSTM:
             h_t = o_t * T.tanh(c_t)
             return [c_t, h_t]
 
-        outputs_info = [self.c_0, self.h_0]
+        if self.batch_input:
+            input = input.dimshuffle(1, 0, 2)
+            outputs_info = [
+                T.alloc(
+                    x,
+                    input.shape[1],
+                    self.output_dim
+                )
+                for x in [self.c_0, self.h_0]
+            ]
+        else:
+            outputs_info = [self.c_0, self.h_0]
         [_, self.h], updates = theano.scan(
             fn=recurrence_helper,
             sequences=input,
@@ -234,6 +256,10 @@ class LSTM:
             return self.h[-1]
         else:
             raise NotImplementedError("Unknown return type")
+
+
+class GRU:
+    """Gated Recurrent Unit."""
 
 
 class FastLSTM:
