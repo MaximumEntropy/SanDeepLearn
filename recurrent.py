@@ -21,7 +21,6 @@ class RNN:
         output_dim,
         activation='sigmoid',
         embedding=False, name='rnn',
-        return_type='all',
         batch_input=False
     ):
         """Initialize weights and biases."""
@@ -29,7 +28,6 @@ class RNN:
 
         self.input_dim = input_dim
         self.output_dim = output_dim
-        self.return_type = return_type
         self.batch_input = batch_input
         # Set the activation function for this layer
         if activation == 'sigmoid':
@@ -94,12 +92,7 @@ class RNN:
             n_steps=input.shape[0]
         )
 
-        if self.return_type == 'all':
-            return self.h
-        elif self.return_type == 'last':
-            return self.h[-1]
-        else:
-            raise NotImplementedError("Unknown return type")
+        return self.h[-1]
 
 
 class LSTM:
@@ -111,13 +104,11 @@ class LSTM:
         output_dim,
         embedding=False,
         name='lstm',
-        return_type='all',
         batch_input=False
     ):
         """Initialize weights and biases."""
         self.input_dim = input_dim
         self.output_dim = output_dim
-        self.return_type = return_type
         self.batch_input = batch_input
         # Intialize forget gate weights
         self.w_fx = get_weights(
@@ -250,12 +241,7 @@ class LSTM:
             n_steps=input.shape[0]
         )
 
-        if self.return_type == 'all':
-            return self.h
-        elif self.return_type == 'last':
-            return self.h[-1]
-        else:
-            raise NotImplementedError("Unknown return type")
+        return self.h[-1]
 
 
 class GRU:
@@ -268,13 +254,11 @@ class GRU:
         output_dim,
         embedding=False,
         name='gru',
-        return_type='all',
         batch_input=False
     ):
         """Initialize weights and biases."""
         self.input_dim = input_dim
         self.output_dim = output_dim
-        self.return_type = return_type
         self.batch_input = batch_input
 
         self.w_zx = get_weights(
@@ -363,12 +347,7 @@ class GRU:
             n_steps=input.shape[0]
         )
 
-        if self.return_type == 'all':
-            return self.h
-        elif self.return_type == 'last':
-            return self.h[-1]
-        else:
-            raise NotImplementedError("Unknown return type")
+        return self.h[-1]
 
 
 class FastLSTM:
@@ -379,14 +358,12 @@ class FastLSTM:
         input_dim,
         output_dim,
         name='lstm',
-        return_type='all'
     ):
         """Initialize weights and biases."""
         # __TODO__ add parameter for depth
 
         self.input_dim = input_dim
         self.output_dim = output_dim
-        self.return_type = return_type
 
         self.W = get_weights(
             shape=(input_dim, output_dim * 4),
@@ -450,12 +427,7 @@ class FastLSTM:
             n_steps=input.shape[1]
         )
 
-        if self.return_type == 'all':
-            return self.h
-        elif self.return_type == 'last':
-            return self.h[-1]
-        else:
-            raise NotImplementedError("Unknown return type")
+        return self.h[-1]
 
 
 class MiLSTM:
@@ -467,12 +439,11 @@ class MiLSTM:
         output_dim,
         embedding=False,
         name='lstm',
-        return_type='all'
     ):
         """Propogate the input through the LSTM."""
+        # http://arxiv.org/pdf/1606.06630v1.pdf
         self.input_dim = input_dim
         self.output_dim = output_dim
-        self.return_type = return_type
 
         # Intialize block input gates
         self.w_zx = get_weights(
@@ -572,36 +543,47 @@ class MiLSTM:
 
     def fprop(self, input):
         """Propogate the input through the LSTM."""
-        def recurrence_helper(x_tm1, h_tm1, z_tm1):
+        def recurrence_helper(x_t, z_tm1, h_tm1):
             z_t = T.tanh(
-                self.a_z * T.dot(x_tm1, self.w_zx) * T.dot(h_tm1, self.w_zh) +
+                self.a_z * T.dot(x_t, self.w_zx) * T.dot(h_tm1, self.w_zh) +
                 self.b_z1 * T.dot(h_tm1, self.w_zh) +
-                self.b_z2 * T.dot(x_tm1, self.w_zx) +
+                self.b_z2 * T.dot(x_t, self.w_zx) +
                 self.b_z
             )
             i_t = T.nnet.sigmoid(
-                self.a_i * T.dot(x_tm1, self.w_ix) * T.dot(h_tm1, self.w_ih) +
+                self.a_i * T.dot(x_t, self.w_ix) * T.dot(h_tm1, self.w_ih) +
                 self.b_i1 * T.dot(h_tm1, self.w_ih) +
-                self.b_i2 * T.dot(x_tm1, self.w_ix) +
+                self.b_i2 * T.dot(x_t, self.w_ix) +
                 self.b_i
             )
             f_t = T.nnet.sigmoid(
-                self.a_f * T.dot(x_tm1, self.w_fx) * T.dot(h_tm1, self.w_fh) +
+                self.a_f * T.dot(x_t, self.w_fx) * T.dot(h_tm1, self.w_fh) +
                 self.b_f1 * T.dot(h_tm1, self.w_fh) +
-                self.b_f2 * T.dot(x_tm1, self.w_fx) +
+                self.b_f2 * T.dot(x_t, self.w_fx) +
                 self.b_f
             )
+            c_t = i_t * z_t + f_t * z_tm1
             o_t = T.nnet.sigmoid(
-                self.a_o * T.dot(x_tm1, self.w_ox) * T.dot(h_tm1, self.w_oh) +
+                self.a_o * T.dot(x_t, self.w_ox) * T.dot(h_tm1, self.w_oh) +
                 self.b_o1 * T.dot(h_tm1, self.w_oh) +
-                self.b_o2 * T.dot(x_tm1, self.w_ox) +
+                self.b_o2 * T.dot(x_t, self.w_ox) +
                 self.b_o
             )
-            c_t = i_t * z_t + f_t * z_tm1
             h_t = o_t * T.tanh(c_t)
             return [z_t, h_t]
 
-        outputs_info = [self.z_0, self.h_0]
+        if self.batch_input:
+            input = input.dimshuffle(1, 0, 2)
+            outputs_info = [
+                T.alloc(
+                    x,
+                    input.shape[1],
+                    self.output_dim
+                )
+                for x in [self.z_0, self.h_0]
+            ]
+        else:
+            outputs_info = [self.z_0, self.h_0]
         [_, self.h], updates = theano.scan(
             fn=recurrence_helper,
             sequences=input,
@@ -609,12 +591,7 @@ class MiLSTM:
             n_steps=input.shape[0]
         )
 
-        if self.return_type == 'all':
-            return self.h
-        elif self.return_type == 'last':
-            return self.h[-1]
-        else:
-            raise NotImplementedError("Unknown return type")
+        return self.h[-1]
 
 
 class BiRNN:
@@ -629,22 +606,16 @@ class BiRNN:
 
     def fprop(self, input):
         """Progate the input throught the forward and backward RNNS."""
-        assert self.forward_rnn.return_type == self.backward_rnn.return_type
+        f_h = self.forward_rnn.fprop(input)
+        self.h = T.concatenate(
+            (
+                self.forward_rnn.h,
+                self.backward_rnn.h[::-1]
+            ),
+            axis=1
+        )
 
-        if self.forward_rnn.return_type == 'all':
-            return T.concatenate(
-                (
-                    self.forward_rnn.fprop(input),
-                    self.backward_rnn.fprop(input[::-1])
-                ),
-                axis=1
-            )
-        elif self.backward_rnn.return_type == 'last':
-            return T.concatenate(
-                (
-                    self.forward_rnn.fprop(input),
-                    self.backward_rnn.fprop(input[::-1]))
-                )
+        return T.concatenate((f_h, self.backward_rnn.h[-1]))
 
 
 class BiLSTM:
@@ -659,19 +630,37 @@ class BiLSTM:
 
     def fprop(self, input):
         """Propogate the input through the forward and backward LSTMS."""
-        assert self.forward_lstm.return_type == self.backward_lstm.return_type
+        f_h = self.forward_lstm.fprop(input)
+        self.h = T.concatenate(
+            (
+                self.forward_lstm.h,
+                self.backward_lstm.h[::-1]
+            ),
+            axis=1
+        )
 
-        if self.forward_lstm.return_type == 'all':
-            return T.concatenate(
-                (
-                    self.forward_lstm.fprop(input),
-                    self.backward_lstm.fprop(input[::-1])
-                ),
-                axis=1
-            )
-        elif self.forward_lstm.return_type == 'last':
-            return T.concatenate(
-                (
-                    self.forward_lstm.fprop(input),
-                    self.backward_lstm.fprop(input[::-1]))
-                )
+        return T.concatenate((f_h, self.backward_lstm.h[-1]))
+
+
+class BiGRU:
+    """Bidirectional GRU."""
+
+    def __init__(self, forward_gru, backward_gru):
+        """Initialize the forward and backward LSTMS."""
+        self.forward_gru = forward_gru
+        self.backward_gru = backward_gru
+
+        self.params = self.forward_gru.params + self.backward_gru.params
+
+    def fprop(self, input):
+        """Propogate the input through the forward and backward LSTMS."""
+        f_h = self.forward_gru.fprop(input)
+        self.h = T.concatenate(
+            (
+                self.forward_gru.h,
+                self.backward_gru.h[::-1]
+            ),
+            axis=1
+        )
+
+        return T.concatenate((f_h, self.backward_gru.h[-1]))
