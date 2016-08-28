@@ -433,6 +433,7 @@ class FastLSTM:
 class MiLSTM:
     """Multiplicative LSTM."""
 
+    # http://arxiv.org/pdf/1606.06630v1.pdf
     def __init__(
         self,
         input_dim,
@@ -441,7 +442,6 @@ class MiLSTM:
         name='lstm',
     ):
         """Propogate the input through the LSTM."""
-        # http://arxiv.org/pdf/1606.06630v1.pdf
         self.input_dim = input_dim
         self.output_dim = output_dim
 
@@ -597,6 +597,7 @@ class MiLSTM:
 class BiRNN:
     """Bidirectional RNN."""
 
+    # Forward and Backward RNNs can be any of the above RNN types.
     def __init__(self, forward_rnn, backward_rnn):
         """Initialize forward and backward RNNs."""
         self.forward_rnn = forward_rnn
@@ -616,51 +617,3 @@ class BiRNN:
         )
 
         return T.concatenate((f_h, self.backward_rnn.h[-1]))
-
-
-class BiLSTM:
-    """Bidirectional LSTM."""
-
-    def __init__(self, forward_lstm, backward_lstm):
-        """Initialize the forward and backward LSTMS."""
-        self.forward_lstm = forward_lstm
-        self.backward_lstm = backward_lstm
-
-        self.params = self.forward_lstm.params + self.backward_lstm.params
-
-    def fprop(self, input):
-        """Propogate the input through the forward and backward LSTMS."""
-        f_h = self.forward_lstm.fprop(input)
-        self.h = T.concatenate(
-            (
-                self.forward_lstm.h,
-                self.backward_lstm.h[::-1]
-            ),
-            axis=1
-        )
-
-        return T.concatenate((f_h, self.backward_lstm.h[-1]))
-
-
-class BiGRU:
-    """Bidirectional GRU."""
-
-    def __init__(self, forward_gru, backward_gru):
-        """Initialize the forward and backward LSTMS."""
-        self.forward_gru = forward_gru
-        self.backward_gru = backward_gru
-
-        self.params = self.forward_gru.params + self.backward_gru.params
-
-    def fprop(self, input):
-        """Propogate the input through the forward and backward LSTMS."""
-        f_h = self.forward_gru.fprop(input)
-        self.h = T.concatenate(
-            (
-                self.forward_gru.h,
-                self.backward_gru.h[::-1]
-            ),
-            axis=1
-        )
-
-        return T.concatenate((f_h, self.backward_gru.h[-1]))

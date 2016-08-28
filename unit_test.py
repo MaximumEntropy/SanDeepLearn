@@ -1,6 +1,6 @@
 """Unit tests for RNNs and feedforward layers."""
 from layer import FullyConnectedLayer, Convolution2DLayer
-from layer import EmbeddingLayer
+from layer import EmbeddingLayer, DropoutLayer, KMaxPoolingLayer
 from utils import get_data
 from recurrent import RNN, LSTM
 import theano
@@ -38,13 +38,18 @@ rnnlayers = [
     'lstm',
 ]
 
-if layer not in fclayers + rnnlayers:
+misc = [
+    'drp'  # dropout
+]
+
+
+if layer not in fclayers + rnnlayers + misc:
     raise ValueError(
         "Layer name not recognized. Implemented layers : %s"
         % (','.join(fclayers + rnnlayers))
     )
 
-if layer in fclayers:
+if layer in fclayers or layer in misc:
     print 'Fetching MNIST data ...'
     train_x, train_y, dev_x, dev_y, test_x, test_y = get_data(dataset='mnist')
 else:
@@ -52,29 +57,35 @@ else:
     train_x, train_y, dev_x, dev_y, test_x, test_y = get_data(dataset='tmh')
 
 
-def train_ffnn():
+def train_ffnn(dropout=False):
     """Create, compile and train feedforward neural net."""
     x = T.fmatrix()
     y = T.imatrix()
     fc1 = FullyConnectedLayer(
         input_dim=train_x.shape[1],
         output_dim=500,
-        activation='tanh'
+        activation='relu'
     )
     fc2 = FullyConnectedLayer(
         input_dim=500,
         output_dim=500,
-        activation='tanh'
+        activation='relu'
     )
     fc3 = FullyConnectedLayer(
         input_dim=500,
         output_dim=10,
         activation='softmax'
     )
-
+    if dropout:
+        drp1 = DropoutLayer()
+        drp2 = DropoutLayer()
     params = fc1.params + fc2.params + fc3.params
     act1 = fc1.fprop(x)
+    if dropout:
+        act1 = drp1.fprop(act1)
     act2 = fc2.fprop(act1)
+    if dropout:
+        act2 = drp2.fprop(act2)
     act3 = fc3.fprop(act2)
     loss = T.nnet.categorical_crossentropy(
         act3,
@@ -122,7 +133,14 @@ def train_ffnn():
     )
 
 
-def train_cnn():
+def train_cnn(
+    train_x,
+    train_y,
+    dev_x,
+    dev_y,
+    test_x,
+    test_y
+):
     """Train CNN."""
     train_x = train_x.reshape(
         train_x.shape[0],
@@ -150,36 +168,42 @@ def train_cnn():
     convolution_layer0 = Convolution2DLayer(
         input_height=train_x.shape[2],
         input_width=train_x.shape[3],
-        filter_width=5,
-        filter_height=5,
-        num_filters=20,
-        num_feature_maps=1,
-        flatten=False,
-        wide=False
+        kernel_width=5,
+        kernel_height=5,
+        num_kernels=20,
+        num_channels=1,
+        wide=False,
+        batch_normalization=True
     )
 
     convolution_layer1 = Convolution2DLayer(
         input_height=convolution_layer0.output_height_shape,
         input_width=convolution_layer0.output_width_shape,
-        filter_width=5,
-        filter_height=5,
-        num_filters=50,
-        num_feature_maps=20,
-        flatten=True,
-        wide=False
+        kernel_width=5,
+        kernel_height=5,
+        num_kernels=50,
+        num_channels=convolution_layer0.num_kernels,
+        wide=False,
+        batch_normalization=True
     )
 
-    fc1 = FullyConnectedLayer(800, 500, activation='tanh')
+    kmax_layer = KMaxPoolingLayer(
+        pooling_factor=(2, 2)
+    )
+
+    fc1 = FullyConnectedLayer(5000, 500, activation='relu')
     fc2 = FullyConnectedLayer(500, 10, activation='softmax')
 
     params = convolution_layer0.params + convolution_layer1.params + \
         fc1.params + fc2.params
     act1 = convolution_layer0.fprop(x)
     act2 = convolution_layer1.fprop(act1)
-    act3 = fc1.fprop(act2)
-    act4 = fc2.fprop(act3)
+    act3 = kmax_layer.fprop(act2)
+    act3 = act3.flatten(ndim=2)
+    act4 = fc1.fprop(act3)
+    act5 = fc2.fprop(act4)
     loss = T.nnet.categorical_crossentropy(
-        act4,
+        act5,
         y
     ).mean()
 
@@ -200,7 +224,7 @@ def train_cnn():
     print 'Compiling evaluation function ...'
     f_eval = theano.function(
         inputs=[x],
-        outputs=act4
+        outputs=act5
     )
 
     print 'Training network ...'
@@ -212,6 +236,7 @@ def train_cnn():
                 train_y[batch:batch + 24]
             )
             costs.append(cost)
+            print 'Finished minibatch %d cost : %.3f ' % (batch, cost)
         print 'Epoch %d Training Loss : %.3f ' % (epoch, np.mean(costs))
 
     dev_predictions = f_eval(dev_x)
@@ -285,10 +310,19 @@ def train_rnn(network):
     print 'Testing Accuracy : %f%% ' % (np.mean(accs) * 100.)
 
 if layer == 'cnn':
-    train_cnn()
+    train_cnn(
+        train_x,
+        train_y,
+        dev_x,
+        dev_y,
+        test_x,
+        test_y
+    )
 elif layer == 'fc':
     train_ffnn()
 elif layer == 'rnn':
     train_rnn(network='rnn')
 elif layer == 'lstm':
     train_rnn(network='lstm')
+elif layer == 'drp':
+    train_ffnn(dropout=True)

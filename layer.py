@@ -3,7 +3,6 @@ from utils import get_weights, get_bias, get_highway_bias, get_relu_weights
 
 import theano
 import theano.tensor as T
-from theano.tensor.signal import downsample
 import numpy as np
 
 __author__ = "Sandeep Subramanian"
@@ -20,11 +19,13 @@ class FullyConnectedLayer:
         input_dim,
         output_dim,
         activation='sigmoid',
+        batch_normalization=True,
         name='fully_connected'
     ):
         """Initialize weights and bias."""
         self.input_dim = input_dim
         self.output_dim = output_dim
+        self.batch_normalization = batch_normalization
 
         # Set the activation function for this layer
         if activation == 'sigmoid':
@@ -53,11 +54,31 @@ class FullyConnectedLayer:
             )
 
         self.bias = get_bias(output_dim, name=name + '__bias')
-        self.params = [self.weights, self.bias]
+        if self.batch_normalization:
+            self.gamma = theano.shared(
+                value=np.ones((self.output_dim,)),
+                name='gamma'
+            )
+            self.beta = theano.shared(
+                value=np.zeros((self.output_dim,)),
+                name='beta'
+            )
+            self.params = [self.weights, self.bias, self.gamma, self.beta]
+        else:
+            self.params = [self.weights, self.bias]
 
     def fprop(self, input):
         """Propogate the input through the FC-layer."""
         linear_activation = T.dot(input, self.weights) + self.bias
+        if self.batch_normalization:
+            linear_activation = T.nnet.bn.batch_normalization(
+                inputs=linear_activation,
+                gamma=self.gamma,
+                beta=self.beta,
+                mean=linear_activation.mean(keepdims=True),
+                std=linear_activation.var(keepdims=True),
+                mode='low_mem',
+            ).astype(theano.config.floatX)
         if self.activation == 'linear':
             return linear_activation
         else:
@@ -77,7 +98,7 @@ class DropoutLayer:
             self.rng.randint(1337)
         )
 
-    def fprop(self, input):
+    def fprop(self, input, deterministic=False):
         """Apply dropout mask to the input."""
         dropout_mask = self.srng.binomial(
             n=1,
@@ -85,6 +106,7 @@ class DropoutLayer:
             size=input.shape,
             dtype=theano.config.floatX
         )
+        output = T.switch()
         return input * dropout_mask
 
 
@@ -94,108 +116,6 @@ class SoftMaxLayer:
     def fprop(self, input):
         """Propogate input through the layer."""
         return T.nnet.softmax(input)
-
-
-class Convolution2DLayer:
-    """2D Convolution Layer."""
-
-    def __init__(
-        self,
-        input_height,
-        input_width,
-        filter_width,
-        filter_height,
-        num_filters,
-        num_feature_maps,
-        pooling_factor=(2, 2),
-        flatten=False,
-        wide=False,
-        name='conv'
-    ):
-        """Intialize convolution filters."""
-        self.num_filters = num_filters
-        self.input_width = input_width
-        self.input_height = input_height
-        self.filter_width = filter_width
-        self.filter_height = filter_height
-        self.pooling_factor = pooling_factor
-        self.flatten = flatten
-        self.wide = wide
-
-        # Compute fan_in and fan_out to initialize filters
-        self.fan_in = num_feature_maps * filter_width * filter_height
-        self.fan_out = num_filters * filter_width * filter_height
-
-        # Compute the output shape of the network
-        if self.wide:
-            self.output_height_shape = (
-                self.input_height +
-                self.filter_height - 1
-            ) / self.pooling_factor[0]
-            self.output_width_shape = (
-                self.input_width +
-                self.filter_width - 1
-            ) / self.pooling_factor[1]
-        elif not self.wide:
-            self.output_height_shape = (
-                self.input_height -
-                self.filter_height + 1
-            ) / self.pooling_factor[0]
-            self.output_width_shape = (
-                self.input_width -
-                self.filter_width + 1
-            ) / self.pooling_factor[1]
-
-        if self.flatten:
-            self.output_flatten_shape = self.output_height_shape * \
-                self.output_width_shape * self.num_filters
-
-        self.filter_shape = (
-            num_filters,
-            num_feature_maps,
-            filter_height,
-            filter_width
-        )
-
-        # Get filters and bias
-        self.filters = get_weights(
-            shape=self.filter_shape,
-            name=name + '__filters'
-        )
-        self.bias = get_bias(self.num_filters, name=name + '__bias')
-        self.params = [self.filters, self.bias]
-
-    def fprop(self, input):
-        """Propogate the input through the layer."""
-        # Convolve filters over the input
-        self.convolution = T.nnet.conv.conv2d(
-            input=input,
-            filters=self.filters,
-            filter_shape=self.filter_shape,
-            border_mode='full' if self.wide else 'valid'
-        )
-
-        self.conv_out = T.tanh(
-            self.convolution +
-            self.bias.dimshuffle('x', 0, 'x', 'x')
-        )
-
-        # If the layer has pooling, downsample the convolution output
-        if not self.pooling_factor:
-            return self.conv_out
-        else:
-            self.pooled_out = downsample.max_pool_2d(
-                input=self.conv_out,
-                ds=self.pooling_factor,
-                ignore_border=True
-            )
-
-        # If the layer's output needs to be flattened
-        # (for input to a fully connected layer) set output dim to 2
-        if self.flatten:
-            return self.pooled_out.flatten(ndim=2)
-        else:
-            return self.pooled_out
 
 
 class EmbeddingLayer:
