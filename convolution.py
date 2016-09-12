@@ -160,8 +160,9 @@ class KMaxPoolingLayer:
 class VGGNetwork:
     """VGG Convnet."""
 
-    def __init__(self):
+    def __init__(self, path_to_weights):
         """Initialize convolution layers."""
+        self.path_to_weights = path_to_weights
         self.conv1_1 = Convolution2DLayer(
             num_kernels=64,
             num_channels=3,
@@ -348,7 +349,7 @@ class VGGNetwork:
         self._set_weights()
 
     def _set_weights(self):
-        pretrained_model = pickle.load(open('data/vgg19.pkl'))
+        pretrained_model = pickle.load(open(self.path_to_weights))
         assert len(pretrained_model['param values']) == len(self.params)
         for pretrained_values, param in zip(
             pretrained_model['param values'],
