@@ -31,6 +31,32 @@ class Optimizer:
 
         return updates
 
+    def sgdmomentum(self, cost, params, lr=0.01, momentum=0.9):
+        """Stochatic gradient descent with momentum."""
+        assert 0 <= momentum < 1
+
+        lr = theano.shared(np.float32(lr).astype(theano.config.floatX))
+        momentum = theano.shared(
+            np.float32(momentum).astype(theano.config.floatX)
+        )
+
+        gradients = T.grad(
+            theano.gradient.grad_clip(cost, -1 * self.clip, self.clip),
+            params
+        )
+        velocities = [theano.shared(np.zeros_like(
+            param.get_value(borrow=True)
+        ).astype(theano.config.floatX)) for param in params]
+
+        updates = []
+
+        for param, gradient, velocity in zip(params, gradients, velocities):
+            new_velocity = momentum * velocity - lr * gradient
+            updates.append((velocity, new_velocity))
+            updates.append((param, param + new_velocity))
+
+        return updates
+
     def adagrad(self, cost, params, lr=0.01, epsilon=1e-6):
         """Adaptive Gradient Optimization."""
         lr = theano.shared(np.float32(lr).astype(theano.config.floatX))
