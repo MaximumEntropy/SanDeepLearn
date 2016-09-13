@@ -3,7 +3,7 @@ from utils import get_weights, get_bias
 
 import theano
 import theano.tensor as T
-import theano.tensor.signal.downsample as ds
+from theano.tensor.signal import pool
 import numpy as np
 from layer import FullyConnectedLayer
 import pickle
@@ -93,15 +93,13 @@ class Convolution2DLayer:
         if self.batch_normalization:
             self.gamma = theano.shared(
                 value=np.ones((
-                    self.output_height_shape,
-                    # self.output_width_shape
+                    self.num_kernels,
                 )),
                 name='gamma'
             )
             self.beta = theano.shared(
                 value=np.ones((
-                    self.output_height_shape,
-                    # self.output_width_shape
+                    self.num_kernels,
                 )),
                 name='beta'
             )
@@ -126,9 +124,9 @@ class Convolution2DLayer:
                 inputs=self.conv_out,
                 gamma=self.gamma,
                 beta=self.beta,
-                mean=self.conv_out.mean(keepdims=True),
-                std=self.conv_out.var(keepdims=True),
-                mode='low_mem',
+                mean=self.conv_out.mean(axis=1).dimshuffle(0, 'x', 1, 2),
+                std=self.conv_out.std(axis=1).dimshuffle(0, 'x', 1, 2),
+                mode='high_mem',
             ).astype(theano.config.floatX)
 
         return self.activation(self.conv_out)
@@ -149,12 +147,32 @@ class KMaxPoolingLayer:
 
     def fprop(self, input):
         """Propogate the input through the layer."""
-        return ds.pool.pool_2d(
+        return pool.pool_2d(
             input=input,
             ds=self.pooling_factor,
             st=self.stride,
             ignore_border=True
         )
+
+
+class ConvResidualBlock:
+    """Residual block of convnets."""
+
+    def __init__(self, conv_layers):
+        """Initialize residual block params."""
+        self.conv_layers = conv_layers
+        self.num_layers = len(conv_layers)
+        self.params = []
+        for conv_layer in self.conv_layers:
+            self.params += conv_layer.params
+
+    def fprop(self, input):
+        """Propogate input through the network."""
+        prev_inp = input
+        for conv_layer in self.conv_layers[:-1]:
+            prev_inp = conv_layer.fprop(prev_inp)
+        projection = self.conv_layers[-1].fprop(input)
+        return T.nnet.relu(prev_inp + projection)
 
 
 class VGGNetwork:

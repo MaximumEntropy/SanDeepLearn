@@ -1,6 +1,6 @@
 """Unit tests for RNNs and feedforward layers."""
-from layer import FullyConnectedLayer, Convolution2DLayer
-from layer import EmbeddingLayer, DropoutLayer, KMaxPoolingLayer
+from convolution import Convolution2DLayer, KMaxPoolingLayer
+from layer import EmbeddingLayer, DropoutLayer, FullyConnectedLayer
 from utils import get_data
 from recurrent import RNN, LSTM
 import theano
@@ -166,24 +166,18 @@ def train_cnn(
     y = T.imatrix()
 
     convolution_layer0 = Convolution2DLayer(
-        input_height=train_x.shape[2],
-        input_width=train_x.shape[3],
-        kernel_width=5,
-        kernel_height=5,
         num_kernels=20,
         num_channels=1,
-        wide=False,
+        kernel_width=5,
+        kernel_height=5,
         batch_normalization=True
     )
 
     convolution_layer1 = Convolution2DLayer(
-        input_height=convolution_layer0.output_height_shape,
-        input_width=convolution_layer0.output_width_shape,
+        num_kernels=50,
+        num_channels=20,
         kernel_width=5,
         kernel_height=5,
-        num_kernels=50,
-        num_channels=convolution_layer0.num_kernels,
-        wide=False,
         batch_normalization=True
     )
 
@@ -197,7 +191,9 @@ def train_cnn(
     params = convolution_layer0.params + convolution_layer1.params + \
         fc1.params + fc2.params
     act1 = convolution_layer0.fprop(x)
+    print 'conv 1', act1.eval({x: np.random.rand(2, 1, 24, 24).astype(np.float32)}).shape
     act2 = convolution_layer1.fprop(act1)
+    print 'conv 2', act2.eval({x: np.random.rand(2, 1, 24, 24).astype(np.float32)}).shape
     act3 = kmax_layer.fprop(act2)
     act3 = act3.flatten(ndim=2)
     act4 = fc1.fprop(act3)
