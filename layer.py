@@ -19,7 +19,7 @@ class FullyConnectedLayer:
         input_dim,
         output_dim,
         activation='sigmoid',
-        batch_normalization=True,
+        batch_normalization=False,
         name='fully_connected'
     ):
         """Initialize weights and bias."""
@@ -37,7 +37,7 @@ class FullyConnectedLayer:
         elif activation == 'softmax':
             self.activation = T.nnet.softmax
         elif activation == 'linear':
-            self.activation = None
+            self.activation = 'linear'
         else:
             raise NotImplementedError("Unknown activation")
 
@@ -76,7 +76,7 @@ class FullyConnectedLayer:
                 gamma=self.gamma,
                 beta=self.beta,
                 mean=linear_activation.mean(keepdims=True),
-                std=linear_activation.var(keepdims=True),
+                std=linear_activation.std(keepdims=True),
                 mode='low_mem',
             ).astype(theano.config.floatX)
         if self.activation == 'linear':
@@ -84,7 +84,7 @@ class FullyConnectedLayer:
         else:
             return self.activation(linear_activation)
 
-
+'''
 class DropoutLayer:
     """Dropout Layer."""
 
@@ -108,6 +108,7 @@ class DropoutLayer:
         )
         output = T.switch()
         return input * dropout_mask
+'''
 
 
 class SoftMaxLayer:
@@ -116,6 +117,16 @@ class SoftMaxLayer:
     def fprop(self, input):
         """Propogate input through the layer."""
         return T.nnet.softmax(input)
+
+
+class SoftMaxLayer3D:
+    """3D Softmax Layer."""
+
+    def fprop(self, input):
+        """Propogate input through the layer."""
+        e = T.exp(input - T.max(input, axis=-1, keepdims=True))
+        s = T.sum(e, axis=-1, keepdims=True)
+        return e / s
 
 
 class EmbeddingLayer:
@@ -158,104 +169,23 @@ class EmbeddingLayer:
         return self.embedding[input]
 
 
-class MaxoutLayer:
-    """Maxout Layer."""
+class FullyConnectedResidualBlock:
+    """Residual block of FC layers."""
 
-    # http://jmlr.csail.mit.edu/proceedings/papers/v28/goodfellow13.pdf
-    # THIS IS STILL EXPERIMENTAL AND DOES NOT WORK
-    def __init__(
-        self,
-        input_dim,
-        pool_size,
-        dropout_rate=None,
-        name='maxout'
-    ):
-        """Initialize dropout rate, and weights."""
-        self.input_dim = input_dim
-        self.pool_size = pool_size
-        self.output_dim = np.ceil(self.input_dim / self.pool_size)
-        self.is_training = True
-        self.dropout_rate = dropout_rate
-        self.rng = np.random.RandomState(1234)
-        self.srng = T.shared_randomstreams.RandomStreams(
-            self.rng.randint(1337)
-        )
+    def __init__(self, fc_layers):
+        """Initialize residual block params."""
+        self.fc_layers = fc_layers
+        self.num_layers = len(fc_layers)
+        self.params = []
+        for layer in self.fc_layers:
+            self.params += layer.params
 
-        self.weights = get_weights(
-            shape=(self.input_dim, self.input_dim),
-            name=name + '__weights'
-        )
-        self.bias = get_bias(self.input_dim, name=name + '__bias')
-
-        self.params = [self.weights, self.bias]
-
-    def fprop(self, input, is_training=True):
-        """Propogate the input through the layer."""
-        cur_max = None
-        linear_activation = T.dot(input, self.weights) + self.bias
-
-        # If dropout is enabled and the network is training,
-        # use the dropout mask before applying the non-linearity
-        if self.dropout_rate is not None and self.is_training:
-            dropout_mask = self.srng.binomial(
-                n=1,
-                p=1.0-self.dropout_rate,
-                size=linear_activation.shape,
-                dtype=theano.config.floatX
-            )
-            linear_activation = linear_activation * dropout_mask
-
-        # If dropout is enabled and the network is being used for predictions,
-        # don't apply the dropout mask and scale the activation by the dropout
-        elif self.dropout_rate is not None and not is_training:
-            linear_activation = linear_activation / self.dropout_rate
-
-        for i in xrange(self.pool_size):
-            activation_subset = linear_activation[:, i::self.pool_size]
-            if cur_max is None:
-                cur_max = activation_subset
-            else:
-                cur_max = T.maximum(cur_max, activation_subset)
-
-        return cur_max
-
-
-class DropConnectLayer:
-    """DropConnect Layer."""
-
-    # http://www.matthewzeiler.com/pubs/icml2013/icml2013.pdf
-    # THIS IS EXPERIMENT AND HASN'T BEEN COMPLETED YET
-
-    def __init__(
-        self,
-        input_dim,
-        output_dim,
-        drop_rate=0.3,
-        activation='sigmoid',
-        name='dropconnect'
-    ):
-        """Initialize weights, biases and dropconnect rate."""
-        self.input_dim = input_dim
-        self.output_dim = output_dim
-        self.drop_rate = drop_rate
-
-        # Set the activation function for this layer
-        if activation == 'sigmoid':
-            self.activation = T.nnet.sigmoid
-        elif activation == 'tanh':
-            self.activation = T.tanh
-        elif activation == 'linear':
-            self.activation = None
-        else:
-            raise NotImplementedError("Unknown activation")
-
-        # Initialize weights & biases for this layer
-        self.weights = get_weights(
-            shape=(input_dim, output_dim),
-            name=name + '__weights'
-        )
-        self.bias = get_bias(output_dim, name=name + '__bias')
-        self.params = [self.weights, self.bias]
+    def fprop(self, input):
+        """Propogate input through the network."""
+        prev_inp = input
+        for layer in self.fc_layers:
+            prev_inp = layer.fprop(prev_inp)
+        return T.nnet.relu(prev_inp + input)
 
 
 class HighwayNetworkLayer:
