@@ -172,6 +172,7 @@ class ConvResidualBlock:
         prev_inp = input
         for conv_layer in self.conv_layers[:-1]:
             prev_inp = conv_layer.fprop(prev_inp)
+
         projection = self.conv_layers[-1].fprop(input)
         return T.nnet.relu(prev_inp + projection)
 

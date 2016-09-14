@@ -14,7 +14,7 @@ def get_data(dataset='mnist'):
     """Fetch dataset."""
     if dataset == 'mnist':
 
-        train, dev, test = pickle.load(gzip.open('data/mnist.pkl.gz', 'rb'))
+        train, dev, test = pickle.load(gzip.open('/u/subramas/Research/SanDeepLearn/data/mnist.pkl.gz', 'rb'))
 
         train_x, train_y = train[0], train[1].astype(np.int32)
         dev_x, dev_y = dev[0], dev[1].astype(np.int32)
