@@ -129,6 +129,114 @@ class SoftMaxLayer3D:
         return e / s
 
 
+class BatchNormalizationLayer:
+    """Batch Normalization core."""
+
+    # Inspired by https://github.com/shuuki4/Batch-Normalization
+
+    def __init__(self, input_shape, layer='fc', momentum=0.9):
+        """Initialize parameters."""
+        self.input_shape = input_shape
+        self.layer = layer  # Can be fc/conv
+        self.momentum = momentum
+        self.run_mode = 0  # 0/1 training/testing
+        self.epsilon = 1e-6
+
+        self.input_size = input_shape[1]
+        # random setting of gamma and beta, setting initial mean and std
+        self.gamma = theano.shared(
+            np.asarray(np.random.uniform(
+                low=-1.0 / np.sqrt(self.input_size),
+                high=1.0 / np.sqrt(self.input_size),
+                size=(input_shape[1])),
+            ).astype(np.float32),
+            name='gamma',
+            borrow=True
+        )
+        self.beta = theano.shared(
+            np.zeros(
+                (self.input_size),
+            ).astype(np.float32),
+            name='beta',
+            borrow=True
+        )
+        self.mean = theano.shared(
+            np.zeros(
+                (self.input_size),
+                dtype=theano.config.floatX
+            ),
+            name='mean',
+            borrow=True
+        )
+
+        self.var = theano.shared(
+            np.ones(
+                (input_shape[1]),
+                dtype=theano.config.floatX
+            ),
+            name='var',
+            borrow=True
+        )
+
+        # parameter save for update
+        self.params = [self.gamma, self.beta]
+
+    def set_runmode(self, run_mode):
+        """Change the running mode."""
+        self.run_mode = run_mode
+
+    def change_shape(self, vec):
+        """Modify shape of batch norm params."""
+        vec = T.repeat(vec, self.input_shape[2] * self.input_shape[3])
+        return vec.reshape(
+            (self.input_shape[1], self.input_shape[2], self.input_shape[3])
+        )
+
+    def fprop(self, input):
+        """"Propogate input through the layer."""
+        if self.layer == 'fc':
+            # Training time
+            if self.run_mode == 0:
+                mean_t = T.mean(input, axis=0)  # Compute mean
+                var_t = T.var(input, axis=0)  # Compute variance
+                # Subtract mean and divide by std
+                norm_t = (input - mean_t) / T.sqrt(var_t + self.epsilon)
+                # Add parameters
+                output = self.gamma * norm_t + self.beta
+                # Update mean and variance
+                self.mean = self.momentum * self.mean + \
+                    (1.0 - self.momentum) * mean_t
+                self.var = self.momentum * self.var + (1.0 - self.momentum) \
+                    * (self.input_shape[0] / (self.input_shape[0] - 1) * var_t)
+            # Test time - use statistics from the training data
+            else:
+                output = self.gamma * (input - self.mean) / \
+                    T.sqrt(self.var + self.epsilon) + self.beta
+
+        elif self.layer == 'conv':
+            if self.run_mode == 0:
+                # Mean across every channel
+                mean_t = T.mean(input, axis=(0, 2, 3))
+                var_t = T.var(input, axis=(0, 2, 3))
+                # mean, var update
+                self.mean = self.momentum * self.mean + \
+                    (1.0 - self.momentum) * mean_t
+                self.var = self.momentum * self.var + (1.0-self.momentum) * \
+                    (self.input_shape[0] / (self.input_shape[0] - 1) * var_t)
+            else:
+                mean_t = self.mean
+                var_t = self.var
+            # change shape to fit input shape
+            mean_t = self.change_shape(mean_t)
+            var_t = self.change_shape(var_t)
+            gamma_t = self.change_shape(self.gamma)
+            beta_t = self.change_shape(self.beta)
+
+            output = gamma_t * (input - mean_t) / \
+                T.sqrt(var_t + self.epsilon) + beta_t
+        return output
+
+
 class EmbeddingLayer:
     """Embedding layer lookup table."""
 
