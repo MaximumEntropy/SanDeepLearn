@@ -5,7 +5,7 @@ import theano
 import theano.tensor as T
 from theano.tensor.signal import pool
 import numpy as np
-from layer import FullyConnectedLayer
+from layer import FullyConnectedLayer, BatchNormalizationLayer
 import pickle
 theano.config.floatX = 'float32'
 
@@ -159,21 +159,70 @@ class KMaxPoolingLayer:
 class ConvResidualBlock:
     """Residual block of convnets."""
 
-    def __init__(self, conv_layers):
+    def __init__(
+        self,
+        num_kernels,
+        num_channels,
+        kernel_height,
+        kernel_width,
+        num_layers,
+        strides,
+        input_shapes,
+        name
+    ):
         """Initialize residual block params."""
+        assert len(num_kernels) == len(num_channels) == len(kernel_height) == \
+            len(kernel_width) == len(strides) == num_layers
+
+        self.num_kernels = num_kernels
+        self.num_channels = num_channels
+        self.kernel_width = kernel_width
+        self.kernel_height = kernel_height
+        self.num_layers = num_layers
+        self.strides = strides
+        self.input_shapes = input_shapes
+        self.name = name
+        conv_layers = [Convolution2DLayer(
+            num_kernels=self.num_kernels[i],
+            num_channels=self.num_channels[i],
+            kernel_height=self.kernel_height[i],
+            kernel_width=self.kernel_width[i],
+            stride=self.strides[i],
+            border_mode='half',
+            name='conv_block_%d_layer_%d' % (self.name, i)
+        ) for i in xrange(self.num_layers)]
+
+        conv_layers.append(Convolution2DLayer(
+            num_kernels=num_kernels[0],
+            num_channels=num_channels[0],
+            kernel_height=1,
+            kernel_width=1,
+            border_mode='half',
+            activation='linear',
+            name='conv_block_proj_%d' % (name)
+        ))
+
+        bn_layers = [BatchNormalizationLayer(
+            input_shapes=self.input_shape[i],
+            layer='conv'
+        ) for i in xrange(self.num_layers)]
+
         self.conv_layers = conv_layers
-        self.num_layers = len(conv_layers)
+        self.bn_layers = bn_layers
         self.params = []
         for conv_layer in self.conv_layers:
             self.params += conv_layer.params
+        for bn_layer in self.bn_layers:
+            self.params += bn_layer.params
 
     def fprop(self, input):
         """Propogate input through the network."""
         prev_inp = input
-        for conv_layer in self.conv_layers[:-1]:
+        for bn_layer, conv_layer in zip(self.conv_layers[:-1], self.bn_layers):
             prev_inp = conv_layer.fprop(prev_inp)
+            prev_inp = bn_layer.fprop(prev_inp)
 
-        projection = self.conv_layers[-1].fprop(input)
+        projection = self.conv_layers[-1].fprop(prev_inp)
         return T.nnet.relu(prev_inp + projection)
 
 
