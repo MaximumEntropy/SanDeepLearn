@@ -52,7 +52,7 @@ class Convolution2DLayer:
         elif activation == 'softmax':
             self.activation = T.nnet.softmax
         elif activation == 'linear':
-            self.activation = None
+            self.activation = 'linear'
         else:
             raise NotImplementedError("Unknown activation")
 
@@ -126,10 +126,11 @@ class Convolution2DLayer:
                 beta=self.beta,
                 mean=self.conv_out.mean(axis=1).dimshuffle(0, 'x', 1, 2),
                 std=self.conv_out.std(axis=1).dimshuffle(0, 'x', 1, 2),
-                mode='high_mem',
+                mode='low_mem',
             ).astype(theano.config.floatX)
 
-        return self.activation(self.conv_out)
+        return self.conv_out if self.activation == 'linear' \
+            else self.activation(self.conv_out)
 
 
 class KMaxPoolingLayer:
