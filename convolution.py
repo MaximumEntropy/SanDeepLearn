@@ -4,7 +4,6 @@ from utils import get_weights, get_bias
 import theano
 import theano.tensor as T
 from theano.tensor.signal import pool
-import numpy as np
 from layer import FullyConnectedLayer, BatchNormalizationLayer
 import pickle
 theano.config.floatX = 'float32'
@@ -27,7 +26,6 @@ class Convolution2DLayer:
         activation='relu',
         stride=(1, 1),
         border_mode='valid',
-        batch_normalization=False,
         name='conv',
     ):
         """Intialize convolution filters."""
@@ -36,7 +34,6 @@ class Convolution2DLayer:
         self.kernel_height = kernel_height
         self.stride = stride
         self.border_mode = border_mode
-        self.batch_normalization = batch_normalization
         self.num_channels = num_channels
         # Compute fan_in and fan_out to initialize filters
         self.fan_in = num_channels * kernel_width * kernel_height
@@ -57,26 +54,6 @@ class Convolution2DLayer:
             raise NotImplementedError("Unknown activation")
 
         # Compute the output shape of the network
-        '''
-        if self.wide:
-            self.output_height_shape = (
-                self.input_height +
-                self.kernel_height - 1
-            ) / self.stride[0]
-            self.output_width_shape = (
-                self.input_width +
-                self.kernel_width - 1
-            ) / self.stride[1]
-        elif not self.wide:
-            self.output_height_shape = (
-                self.input_height -
-                self.kernel_height + 1
-            ) / self.stride[0]
-            self.output_width_shape = (
-                self.input_width -
-                self.kernel_width + 1
-            ) / self.stride[1]
-        '''
         self.kernel_shape = (
             self.num_kernels,
             self.num_channels,
@@ -90,22 +67,7 @@ class Convolution2DLayer:
             name=name + '__kernels'
         )
         self.bias = get_bias(self.num_kernels, name=name + '__bias')
-        if self.batch_normalization:
-            self.gamma = theano.shared(
-                value=np.ones((
-                    self.num_kernels,
-                )),
-                name='gamma'
-            )
-            self.beta = theano.shared(
-                value=np.ones((
-                    self.num_kernels,
-                )),
-                name='beta'
-            )
-            self.params = [self.kernels, self.bias, self.gamma, self.beta]
-        else:
-            self.params = [self.kernels, self.bias]
+        self.params = [self.kernels, self.bias]
 
     def fprop(self, input):
         """Propogate the input through the layer."""
@@ -119,18 +81,9 @@ class Convolution2DLayer:
 
         self.conv_out = self.convolution + \
             self.bias.dimshuffle('x', 0, 'x', 'x')
-        if self.batch_normalization:
-            self.conv_out = T.nnet.bn.batch_normalization(
-                inputs=self.conv_out,
-                gamma=self.gamma,
-                beta=self.beta,
-                mean=self.conv_out.mean(axis=1).dimshuffle(0, 'x', 1, 2),
-                std=self.conv_out.std(axis=1).dimshuffle(0, 'x', 1, 2),
-                mode='low_mem',
-            ).astype(theano.config.floatX)
 
-        return self.conv_out if self.activation == 'linear' \
-            else self.activation(self.conv_out)
+        return self.conv_out if self.activation == 'linear' else \
+            self.activation(self.conv_out)
 
 
 class KMaxPoolingLayer:
@@ -189,41 +142,47 @@ class ConvResidualBlock:
             kernel_width=self.kernel_width[i],
             stride=self.strides[i],
             border_mode='half',
+            activation='linear',
             name='conv_block_%d_layer_%d' % (self.name, i)
         ) for i in xrange(self.num_layers)]
 
-        conv_layers.append(Convolution2DLayer(
-            num_kernels=num_kernels[0],
-            num_channels=num_channels[0],
-            kernel_height=1,
-            kernel_width=1,
-            border_mode='half',
-            activation='linear',
-            name='conv_block_proj_%d' % (name)
-        ))
+        self.proj_kernels = get_weights(
+            shape=(num_kernels[0], num_channels[0], 1, 1),
+            name='__proj_kernels'
+        )
 
         bn_layers = [BatchNormalizationLayer(
-            input_shapes=self.input_shape[i],
+            input_shape=self.input_shapes[i],
             layer='conv'
         ) for i in xrange(self.num_layers)]
 
         self.conv_layers = conv_layers
         self.bn_layers = bn_layers
         self.params = []
+
         for conv_layer in self.conv_layers:
             self.params += conv_layer.params
         for bn_layer in self.bn_layers:
             self.params += bn_layer.params
 
+        self.params.append(self.proj_kernels)
+
     def fprop(self, input):
         """Propogate input through the network."""
         prev_inp = input
-        for bn_layer, conv_layer in zip(self.conv_layers[:-1], self.bn_layers):
-            prev_inp = conv_layer.fprop(prev_inp)
-            prev_inp = bn_layer.fprop(prev_inp)
 
-        projection = self.conv_layers[-1].fprop(prev_inp)
-        return T.nnet.relu(prev_inp + projection)
+        for bn_layer, conv_layer in zip(self.conv_layers, self.bn_layers):
+            prev_inp = bn_layer.fprop(prev_inp)
+            prev_inp = T.nnet.relu(prev_inp)
+            prev_inp = conv_layer.fprop(prev_inp)
+
+        projection = T.nnet.conv2d(
+            input=input,
+            filters=self.proj_kernels,
+            border_mode='half'
+        )
+
+        return prev_inp + projection
 
 
 class VGGNetwork:

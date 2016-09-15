@@ -42,47 +42,19 @@ class FullyConnectedLayer:
             raise NotImplementedError("Unknown activation")
 
         # Initialize weights & biases for this layer
-        if activation == 'relu':
-            self.weights = get_relu_weights(
-                (input_dim, output_dim),
-                name=name + '__weights'
-            )
-        else:
-            self.weights = get_weights(
-                shape=(input_dim, output_dim),
-                name=name + '__weights'
-            )
-
+        self.weights = get_weights(
+            shape=(input_dim, output_dim),
+            name=name + '__weights'
+        )
         self.bias = get_bias(output_dim, name=name + '__bias')
-        if self.batch_normalization:
-            self.gamma = theano.shared(
-                value=np.ones((self.output_dim,)),
-                name='gamma'
-            )
-            self.beta = theano.shared(
-                value=np.zeros((self.output_dim,)),
-                name='beta'
-            )
-            self.params = [self.weights, self.bias, self.gamma, self.beta]
-        else:
-            self.params = [self.weights, self.bias]
+
+        self.params = [self.weights, self.bias]
 
     def fprop(self, input):
         """Propogate the input through the FC-layer."""
         linear_activation = T.dot(input, self.weights) + self.bias
-        if self.batch_normalization:
-            linear_activation = T.nnet.bn.batch_normalization(
-                inputs=linear_activation,
-                gamma=self.gamma,
-                beta=self.beta,
-                mean=linear_activation.mean(keepdims=True),
-                std=linear_activation.std(keepdims=True),
-                mode='low_mem',
-            ).astype(theano.config.floatX)
-        if self.activation == 'linear':
-            return linear_activation
-        else:
-            return self.activation(linear_activation)
+        return linear_activation if self.activation == 'linear' \
+            else self.activation(linear_activation)
 
 '''
 class DropoutLayer:
