@@ -59,17 +59,29 @@ def get_data(dataset='mnist'):
         return train_x, train_y, dev_x, dev_y, test_x, test_y
 
 
-def get_weights(shape, name):
+def get_weights(shape, name, strategy='glorot'):
     """Return a randomly intialized weight matrix."""
     # Initialization Strategy: http://deeplearning.net/tutorial/mlp.html
 
-    drange = np.sqrt(6. / (np.sum(shape)))
-    weights = drange * np.random.uniform(low=-1.0, high=1.0, size=shape)
-    return theano.shared(
-        np.array(weights).astype(np.float32),
-        borrow=True,
-        name=name
-    )
+    if strategy == 'glorot':
+        drange = np.sqrt(6. / (np.sum(shape)))
+        weights = drange * np.random.uniform(low=-1.0, high=1.0, size=shape)
+        return theano.shared(
+            np.array(weights).astype(np.float32),
+            borrow=True,
+            name=name
+        )
+    elif strategy == 'he2015':
+        if len(shape) == 4:
+            fan_in = np.prod(shape[1:])
+        elif len(shape) == 2:
+            fan_in = shape[0]
+        weights = np.random.normal(
+            loc=0,
+            scale=np.sqrt(2.0 / fan_in),
+            size=shape
+        ).astype(theano.config.floatX)
+        return theano.shared(weights, borrow=True, name=name)
 
 
 def get_relu_weights(shape, name):

@@ -12,13 +12,17 @@ __email__ = "sandeep.subramanian@gmail.com"
 class Optimizer:
     """Optimization methods for backpropagation."""
 
-    def __init__(self, clip=5.0):
+    def __init__(self, scheduler=None, clip=5.0):
         """Initialize Optimizer with gradient clipping norm."""
         self.clip = clip
+        self.scheduler = scheduler
+        self.lr = theano.shared(np.float32(0.01).astype(theano.config.floatX)) \
+            if self.scheduler is None else scheduler
 
     def sgd(self, cost, params, lr=0.01):
         """Stochatic Gradient Descent."""
-        lr = theano.shared(np.float32(lr).astype(theano.config.floatX))
+        if self.scheduler is None:
+            self.lr = theano.shared(np.float32(lr).astype(theano.config.floatX))
 
         gradients = T.grad(
             theano.gradient.grad_clip(cost, -1 * self.clip, self.clip),
@@ -27,15 +31,15 @@ class Optimizer:
 
         updates = []
         for param, gradient in zip(params, gradients):
-            updates.append((param, param - lr * gradient))
+            updates.append((param, param - self.lr * gradient))
 
         return updates
 
     def sgdmomentum(self, cost, params, lr=0.01, momentum=0.9):
         """Stochatic gradient descent with momentum."""
         assert 0 <= momentum < 1
-
-        lr = theano.shared(np.float32(lr).astype(theano.config.floatX))
+        if self.scheduler is None:
+            self.lr = theano.shared(np.float32(lr).astype(theano.config.floatX))
         momentum = theano.shared(
             np.float32(momentum).astype(theano.config.floatX)
         )
@@ -51,7 +55,7 @@ class Optimizer:
         updates = []
 
         for param, gradient, velocity in zip(params, gradients, velocities):
-            new_velocity = momentum * velocity - lr * gradient
+            new_velocity = momentum * velocity - self.lr * gradient
             updates.append((velocity, new_velocity))
             updates.append((param, param + new_velocity))
 
@@ -59,7 +63,8 @@ class Optimizer:
 
     def adagrad(self, cost, params, lr=0.01, epsilon=1e-6):
         """Adaptive Gradient Optimization."""
-        lr = theano.shared(np.float32(lr).astype(theano.config.floatX))
+        if self.scheduler is None:
+            self.lr = theano.shared(np.float32(lr).astype(theano.config.floatX))
         epsilon = theano.shared(
             np.float32(epsilon).astype(theano.config.floatX)
         )
@@ -82,7 +87,7 @@ class Optimizer:
             updates.append(
                 (
                     param,
-                    param - lr * gradient / T.sqrt(
+                    param - self.lr * gradient / T.sqrt(
                         accumulated_gradient_new + epsilon
                     )
                 )
@@ -92,7 +97,8 @@ class Optimizer:
     def rmsprop(self, cost, params, lr=0.01, rho=0.9, epsilon=1e-6):
         """RMSProp."""
         # http://www.cs.toronto.edu/~tijmen/csc321/slides/lecture_slides_lec6.pdf
-        lr = theano.shared(np.float32(lr).astype(theano.config.floatX))
+        if self.scheduler is None:
+            self.lr = theano.shared(np.float32(lr).astype(theano.config.floatX))
         epsilon = theano.shared(
             np.float32(epsilon).astype(theano.config.floatX)
         )
@@ -117,7 +123,7 @@ class Optimizer:
             updates.append(
                 (
                     param,
-                    param - lr * gradient / T.sqrt(
+                    param - self.lr * gradient / T.sqrt(
                         accumulated_gradient_new + epsilon
                         )
                 )
@@ -135,7 +141,8 @@ class Optimizer:
     ):
         """ADAM."""
         # Reference - http://arxiv.org/pdf/1412.6980v8.pdf - Page 2
-        lr = theano.shared(np.float32(lr).astype(theano.config.floatX))
+        if self.scheduler is None:
+            self.lr = theano.shared(np.float32(lr).astype(theano.config.floatX))
         epsilon = theano.shared(
             np.float32(epsilon).astype(theano.config.floatX)
         )
@@ -166,7 +173,7 @@ class Optimizer:
             m_hat = m_t / (1 - beta_1)
             v_hat = v_t / (1 - beta_2)
 
-            updated_param = param - (lr * m_hat) / (T.sqrt(v_hat) + epsilon)
+            updated_param = param - (self.lr * m_hat) / (T.sqrt(v_hat) + epsilon)
             updates.append((m_tm_1, m_t))
             updates.append((v_tm_1, v_t))
             updates.append((param, updated_param))

@@ -117,10 +117,8 @@ class BatchNormalizationLayer:
         self.input_size = input_shape[1]
         # random setting of gamma and beta, setting initial mean and std
         self.gamma = theano.shared(
-            np.asarray(np.random.uniform(
-                low=-1.0 / np.sqrt(self.input_size),
-                high=1.0 / np.sqrt(self.input_size),
-                size=(input_shape[1])),
+            np.ones(
+                (self.input_size),
             ).astype(np.float32),
             name='gamma',
             borrow=True
@@ -193,7 +191,7 @@ class BatchNormalizationLayer:
                 # mean, var update
                 self.mean = self.momentum * self.mean + \
                     (1.0 - self.momentum) * mean_t
-                self.var = self.momentum * self.var + (1.0-self.momentum) * \
+                self.var = self.momentum * self.var + (1.0 - self.momentum) * \
                     (self.input_shape[0] / (self.input_shape[0] - 1) * var_t)
             else:
                 mean_t = self.mean

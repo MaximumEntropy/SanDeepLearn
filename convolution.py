@@ -27,6 +27,7 @@ class Convolution2DLayer:
         stride=(1, 1),
         border_mode='valid',
         name='conv',
+        b=True
     ):
         """Intialize convolution filters."""
         self.num_kernels = num_kernels
@@ -35,6 +36,7 @@ class Convolution2DLayer:
         self.stride = stride
         self.border_mode = border_mode
         self.num_channels = num_channels
+        self.b = b
         # Compute fan_in and fan_out to initialize filters
         self.fan_in = num_channels * kernel_width * kernel_height
         self.fan_out = num_kernels * kernel_width * kernel_height
@@ -62,12 +64,17 @@ class Convolution2DLayer:
         )
 
         # Get kernels and bias
+        strategy = 'he2015' if activation == 'relu' else 'glorot'
         self.kernels = get_weights(
             shape=self.kernel_shape,
-            name=name + '__kernels'
+            name=name + '__kernels',
+            strategy=strategy
         )
         self.bias = get_bias(self.num_kernels, name=name + '__bias')
-        self.params = [self.kernels, self.bias]
+        if self.b:
+            self.params = [self.kernels, self.bias]
+        else:
+            self.params = [self.kernels]
 
     def fprop(self, input):
         """Propogate the input through the layer."""
@@ -79,8 +86,8 @@ class Convolution2DLayer:
             border_mode=self.border_mode
         )
 
-        self.conv_out = self.convolution + \
-            self.bias.dimshuffle('x', 0, 'x', 'x')
+        self.conv_out = self.convolution if not self.b else \
+            self.convolution + self.bias.dimshuffle('x', 0, 'x', 'x')
 
         return self.conv_out if self.activation == 'linear' else \
             self.activation(self.conv_out)
@@ -118,79 +125,108 @@ class ConvResidualBlock:
         num_channels,
         kernel_height,
         kernel_width,
-        num_layers,
-        strides,
         input_shapes,
-        name
+        name,
+        increase_dim=False,
+        first=False
     ):
         """Initialize residual block params."""
-        assert len(num_kernels) == len(num_channels) == len(kernel_height) == \
-            len(kernel_width) == len(strides) == num_layers
-
         self.num_kernels = num_kernels
         self.num_channels = num_channels
         self.kernel_width = kernel_width
         self.kernel_height = kernel_height
-        self.num_layers = num_layers
-        self.strides = strides
         self.input_shapes = input_shapes
         self.name = name
-        conv_layers = [Convolution2DLayer(
-            num_kernels=self.num_kernels[i],
-            num_channels=self.num_channels[i],
-            kernel_height=self.kernel_height[i],
-            kernel_width=self.kernel_width[i],
-            stride=self.strides[i],
+        self.increase_dim = increase_dim
+        self.first_stride = (2, 2) if self.increase_dim else (1, 1)
+        self.first = first
+
+        self.conv1 = Convolution2DLayer(
+            num_kernels=self.num_kernels[0],
+            num_channels=self.num_channels[0],
+            kernel_height=self.kernel_height[0],
+            kernel_width=self.kernel_width[0],
+            stride=self.first_stride,
+            border_mode='half',
+            activation='relu',
+            name='conv_block_%d_layer_%d' % (self.name, 0)
+        )
+
+        self.conv2 = Convolution2DLayer(
+            num_kernels=self.num_kernels[1],
+            num_channels=self.num_channels[1],
+            kernel_height=self.kernel_height[1],
+            kernel_width=self.kernel_width[1],
+            stride=(1, 1),
             border_mode='half',
             activation='linear',
-            name='conv_block_%d_layer_%d' % (self.name, i)
-        ) for i in xrange(self.num_layers)]
+            name='conv_block_%d_layer_%d' % (self.name, 1)
+        )
+
+        self.bn1 = BatchNormalizationLayer(
+            input_shape=self.input_shapes[0],
+            layer='conv'
+        )
+
+        self.bn2 = BatchNormalizationLayer(
+            input_shape=self.input_shapes[1],
+            layer='conv'
+        )
 
         self.proj_kernels = get_weights(
             shape=(num_kernels[0], num_channels[0], 1, 1),
             name='__proj_kernels'
         )
 
-        bn_layers = [BatchNormalizationLayer(
-            input_shape=self.input_shapes[i],
-            layer='conv'
-        ) for i in xrange(self.num_layers)]
-
-        self.conv_layers = conv_layers
-        self.bn_layers = bn_layers
+        self.conv_layers = [self.conv1, self.conv2]
+        self.bn_layers = [self.bn1, self.bn2]
         self.params = []
 
-        for conv_layer in self.conv_layers:
-            self.params += conv_layer.params
-        for bn_layer in self.bn_layers:
-            self.params += bn_layer.params
-
-        self.params.append(self.proj_kernels)
+        if self.first:
+            self.params = self.conv1.params + self.conv2.params + \
+                self.bn2.params
+        elif self.increase_dim:
+            self.params = self.conv1.params + self.conv2.params + self.bn1.params \
+                + self.bn2.params + [self.proj_kernels]
+        else:
+            self.params = self.conv1.params + self.conv2.params + self.bn1.params \
+                + self.bn2.params
 
     def fprop(self, input):
         """Propogate input through the network."""
-        prev_inp = input
+        if self.first:
+            bn_pre_relu = input
+        else:
+            bn_pre_conv = self.bn1.fprop(input)
+            bn_pre_relu = T.nnet.relu(bn_pre_conv)
 
-        for bn_layer, conv_layer in zip(self.conv_layers, self.bn_layers):
-            prev_inp = bn_layer.fprop(prev_inp)
-            prev_inp = T.nnet.relu(prev_inp)
-            prev_inp = conv_layer.fprop(prev_inp)
+        self.conv_1 = self.conv1.fprop(bn_pre_relu)
+        self.conv_1 = self.bn2.fprop(self.conv_1)
 
-        projection = T.nnet.conv2d(
-            input=input,
-            filters=self.proj_kernels,
-            border_mode='half'
-        )
+        self.conv_2 = self.conv2.fprop(self.conv_1)
 
-        return prev_inp + projection
+        if self.increase_dim:
+            # projection shortcut, as option B in paper
+            self.projection = T.nnet.conv2d(
+                input=input,
+                filters=self.proj_kernels,
+                border_mode='half',
+                subsample=(2, 2),
+            )
+            output = T.add(self.conv_2, self.projection)
+        else:
+            output = T.add(self.conv_2, input)
+
+        return output
 
 
 class VGGNetwork:
     """VGG Convnet."""
 
-    def __init__(self, path_to_weights):
+    def __init__(self, path_to_weights, pretrained=True):
         """Initialize convolution layers."""
         self.path_to_weights = path_to_weights
+        self.pretrained = pretrained
         self.conv1_1 = Convolution2DLayer(
             num_kernels=64,
             num_channels=3,
@@ -373,8 +409,9 @@ class VGGNetwork:
         self.params += self.full1.params + self.full2.params \
             + self.full3.params
 
-        print 'Initializing network weights ...'
-        self._set_weights()
+        if self.pretrained:
+            print 'Initializing network weights ...'
+            self._set_weights()
 
     def _set_weights(self):
         pretrained_model = pickle.load(open(self.path_to_weights))
@@ -412,7 +449,7 @@ class VGGNetwork:
         self.output_conv5_2 = self.conv5_2.fprop(self.output_conv5_1)
         self.output_conv5_3 = self.conv5_3.fprop(self.output_conv5_2)
         self.output_conv5_4 = self.conv5_4.fprop(self.output_conv5_3)
-        self.output_pool5 = self.pool5.fprop(self.output_conv5_3)
+        self.output_pool5 = self.pool5.fprop(self.output_conv5_4)
 
         self.output_fc6 = self.full1.fprop(
             self.output_pool5.reshape(
