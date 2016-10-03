@@ -357,6 +357,7 @@ class FastLSTM:
         self,
         input_dim,
         output_dim,
+        batch_input=True,
         name='lstm',
     ):
         """Initialize weights and biases."""
@@ -364,6 +365,9 @@ class FastLSTM:
 
         self.input_dim = input_dim
         self.output_dim = output_dim
+        self.batch_input = batch_input
+        if not self.batch_input:
+            raise ValueError('Must have batch input as True')
 
         self.W = get_weights(
             shape=(input_dim, output_dim * 4),
@@ -619,3 +623,60 @@ class BiRNN:
         )
 
         return T.concatenate((f_h, self.backward_rnn.h[-1]))
+
+
+class MultiLayerRNN:
+    """Multi-layer RNN."""
+
+    def __init__(
+        self,
+        num_layers,
+        cell_type,
+        input_dim,
+        output_dim,
+        batch_input
+    ):
+        """Initialize the list of RNNs."""
+        self.num_layers = num_layers
+        self.cell_type = cell_type
+        self.input_dim = input_dim
+        self.output_dim = output_dim
+        self.batch_input = batch_input
+        self.rnns = []
+
+        cell_types = {
+            'FastLSTM': FastLSTM,
+            'GRU': GRU,
+            'MiLSTM': MiLSTM,
+            'LSTM': LSTM
+        }
+
+        self.rnn_cell = cell_types[self.cell_type]
+
+        for i in xrange(self.num_layers):
+            if i == 0:
+                self.rnns.append(
+                    self.rnn_cell(
+                        self.input_dim,
+                        self.output_dim,
+                        self.batch_input,
+                        name='rnn_layer_%d' % (i)
+                    )
+                )
+            else:
+                self.rnns.append(
+                    self.rnn_cell(
+                        self.output_dim,
+                        self.output_dim,
+                        self.batch_input,
+                        name='rnn_layer_%d' % (i)
+                    )
+                )
+
+    def fprop(self, input):
+        """Propogate the input through the network."""
+        output = input
+        for rnn in self.rnns:
+            rnn.fprop(output)
+            output = rnn.h
+        return output
