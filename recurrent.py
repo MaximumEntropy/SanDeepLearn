@@ -439,11 +439,13 @@ class MiLSTM:
         input_dim,
         output_dim,
         embedding=False,
-        name='lstm',
+        batch_input=False,
+        name='milstm',
     ):
         """Propogate the input through the LSTM."""
         self.input_dim = input_dim
         self.output_dim = output_dim
+        self.batch_input = batch_input
 
         # Intialize block input gates
         self.w_zx = get_weights(
@@ -451,7 +453,7 @@ class MiLSTM:
             name=name + '__w_zx'
         )
         self.w_zh = get_weights(
-            shape=(input_dim, output_dim),
+            shape=(output_dim, output_dim),
             name=name + '__w_zh'
         )
 
