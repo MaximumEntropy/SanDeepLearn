@@ -67,7 +67,7 @@ def get_weights(shape, name, strategy='glorot'):
         drange = np.sqrt(6. / (np.sum(shape)))
         weights = drange * np.random.uniform(low=-1.0, high=1.0, size=shape)
         return theano.shared(
-            np.array(weights).astype(np.float32),
+            np.array(weights).astype(theano.config.floatX),
             borrow=True,
             name=name
         )
@@ -82,6 +82,11 @@ def get_weights(shape, name, strategy='glorot'):
             size=shape
         ).astype(theano.config.floatX)
         return theano.shared(weights, borrow=True, name=name)
+    elif strategy == 'orthogonal':
+        assert shape[0] == shape[1]
+        W = np.random.randn(shape[0], shape[1])
+        u, s, v = np.linalg.svd(W)
+        return u.astype(theano.config.floatX)
 
 
 def get_relu_weights(shape, name):

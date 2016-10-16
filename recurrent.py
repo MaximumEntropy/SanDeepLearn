@@ -4,6 +4,7 @@ from utils import get_weights, get_bias
 
 import theano
 import theano.tensor as T
+import numpy as np
 theano.config.floatX = 'float32'
 
 __author__ = "Sandeep Subramanian"
@@ -434,6 +435,115 @@ class FastLSTM:
         return self.h[-1]
 
 
+class FastGRU:
+    """Fast implementation of GRUs."""
+
+    # https://github.com/nyu-dl/dl4mt-tutorial/tree/master/session3
+    def __init__(
+        self,
+        input_dim,
+        output_dim,
+        batch_input=True,
+        name='FastGRU'
+    ):
+        """Initialize FastGRU parameters."""
+        self.input_dim = input_dim
+        self.output_dim = output_dim
+        self.batch_input = batch_input
+
+        # Initialize W
+        self.W = get_weights(
+            shape=(input_dim, 2 * output_dim),
+            name=name + '__W'
+        )
+
+        self.b = get_bias(
+            2 * output_dim,
+            name=name + '__b'
+        )
+
+        self.U = theano.shared(np.concatenate([
+            get_weights(
+                shape=(output_dim, output_dim),
+                name=name + '__U1',
+                strategy='orthogonal',
+            ),
+            get_weights(
+                shape=(output_dim, output_dim),
+                name=name + '__U2',
+                strategy='orthogonal',
+            )
+        ], axis=1), borrow=True)
+
+        self.Wx = get_weights(
+            shape=(input_dim, output_dim),
+            name=name + '__Wx'
+        )
+
+        self.bx = get_bias(
+            output_dim,
+            name=name + '__bx'
+        )
+
+        self.Ux = theano.shared(get_weights(
+            shape=(output_dim, output_dim),
+            name=name + '__Ux',
+            strategy='orthogonal'
+        ), borrow=True)
+
+        self.params = [
+            self.W,
+            self.U,
+            self.b,
+            self.Wx,
+            self.Ux,
+            self.bx
+        ]
+
+    def _partition_weights(self, matrix, n):
+        if matrix.ndim == 3:
+            return matrix[:, :, n * self.output_dim: (n+1) * self.output_dim]
+        return matrix[:, n * self.output_dim: (n+1) * self.output_dim]
+
+    def fprop(self, input, input_mask):
+        """Propogate input through the network."""
+        def recurrence_helper(mask, x_t, xx_t, h_tm1):
+            preact = T.dot(h_tm1, self.U)
+            preact += x_t
+
+            # reset and update gates
+            reset = T.nnet.sigmoid(self._partition_weights(preact, 0))
+            update = T.nnet.sigmoid(self._partition_weights(preact, 1))
+            preactx = T.dot(h_tm1, self.Ux)
+            preactx = preactx * reset
+            preactx = preactx + xx_t
+
+            # current hidden state
+            h = T.tanh(preactx)
+
+            h = update * h_tm1 + (1. - update) * h
+            h = mask[:, None] * h + (1. - mask)[:, None] * h_tm1
+
+            return h
+
+        input = input.dimshuffle(1, 0, 2)
+        state_below = T.dot(input, self.W) + self.b
+        state_belowx = T.dot(input, self.Wx) + self.bx
+
+        sequences = [input_mask, state_below, state_belowx]
+        init_states = [T.alloc(0., input.shape[1], self.output_dim)]
+        shared_vars = [self.U, self.Ux]
+
+        self.h, updates = theano.scan(
+            fn=recurrence_helper,
+            sequences=sequences,
+            outputs_info=init_states,
+            non_sequences=shared_vars,
+            n_steps=input.shape[0],
+        )
+        return self.h
+
+
 class MiLSTM:
     """Multiplicative LSTM."""
 
@@ -442,14 +552,11 @@ class MiLSTM:
         self,
         input_dim,
         output_dim,
-        embedding=False,
-        batch_input=False,
-        name='milstm',
+        name='lstm',
     ):
-        """Propogate the input through the LSTM."""
+        """Initialize MiLSTM parameters."""
         self.input_dim = input_dim
         self.output_dim = output_dim
-        self.batch_input = batch_input
 
         # Intialize block input gates
         self.w_zx = get_weights(
@@ -457,7 +564,7 @@ class MiLSTM:
             name=name + '__w_zx'
         )
         self.w_zh = get_weights(
-            shape=(output_dim, output_dim),
+            shape=(input_dim, output_dim),
             name=name + '__w_zh'
         )
 
