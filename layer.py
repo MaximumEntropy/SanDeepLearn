@@ -247,6 +247,31 @@ class EmbeddingLayer:
         return self.embedding[input]
 
 
+class LayerNorm:
+    """Layer Normalization. https://arxiv.org/pdf/1607.06450v1.pdf."""
+
+    def __init__(self, num_units, name='layer_norm'):
+        """Initialize layer norm params."""
+        self.name = name
+        self.alpha = theano.shared(
+            np.ones(num_units),
+            name=self.name + '__alpha', borrow=True
+        )
+        self.beta = theano.shared(
+            np.ones(num_units),
+            name=self.name + '__beta', borrow=True
+        )
+
+    def fprop(self, input):
+        """Propogate the input through the layer."""
+        output = input - T.mean(input, axis=1, keepdims=True)
+        output = output / T.sqrt(T.var(input, axis=1, keepdims=True) + 1e-5)
+        output = self.alpha.dimshuffle('x', 0) * output + \
+            self.beta.dimshuffle('x', 0)  # scale and shift
+
+        return output
+
+
 class FullyConnectedResidualBlock:
     """Residual block of FC layers."""
 
