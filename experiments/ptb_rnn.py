@@ -10,7 +10,7 @@ import os
 
 sys.path.append('/u/subramas/Research/SanDeepLearn/')
 
-from recurrent import FastLSTM, LSTM, GRU
+from recurrent import FastLSTM, LSTM, GRU, FastGRU, MiLSTM, LNFastLSTM
 from optimizers import Optimizer
 from layer import FullyConnectedLayer, EmbeddingLayer
 
@@ -204,7 +204,10 @@ def get_minibatch(lines, index, batch_size):
 cell_hash = {
     'FastLSTM': FastLSTM,
     'GRU': GRU,
-    'LSTM': LSTM
+    'LSTM': LSTM,
+    'FastGRU': FastGRU,
+    'MiLSTM': MiLSTM,
+    'LNFastLSTM': LNFastLSTM
 }
 
 rnn_cell = cell_hash[args.cell_type]
@@ -350,7 +353,7 @@ f_eval = theano.function(
     outputs=final_output,
 )
 
-num_epochs = 100
+num_epochs = 1000
 logging.info('Training network ...')
 for i in range(num_epochs):
     costs = []

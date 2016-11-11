@@ -5,10 +5,6 @@ import pickle
 import gzip
 import scipy.io as sio
 
-__author__ = "Sandeep Subramanian"
-__maintainer__ = "Sandeep Subramanian"
-__email__ = "sandeep.subramanian@gmail.com"
-
 
 def get_data(dataset='mnist'):
     """Fetch dataset."""

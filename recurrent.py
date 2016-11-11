@@ -554,19 +554,21 @@ class MiLSTM:
         self,
         input_dim,
         output_dim,
+        batch_input=True,
         name='lstm',
     ):
         """Initialize MiLSTM parameters."""
         self.input_dim = input_dim
         self.output_dim = output_dim
+        self.batch_input = batch_input
 
         # Intialize block input gates
         self.w_zx = get_weights(
             shape=(input_dim, output_dim),
             name=name + '__w_zx'
         )
-        self.w_zh = get_weights(
-            shape=(input_dim, output_dim),
+        self.w_zh = create_shared(
+            ortho_weight(output_dim),
             name=name + '__w_zh'
         )
 
@@ -575,8 +577,8 @@ class MiLSTM:
             shape=(input_dim, output_dim),
             name=name + '__w_fx'
         )
-        self.w_fh = get_weights(
-            shape=(output_dim, output_dim),
+        self.w_fh = create_shared(
+            ortho_weight(output_dim),
             name=name + '__w_fh'
         )
 
@@ -585,8 +587,8 @@ class MiLSTM:
             shape=(input_dim, output_dim),
             name=name + '__w_ix'
         )
-        self.w_ih = get_weights(
-            shape=(output_dim, output_dim),
+        self.w_ih = create_shared(
+            ortho_weight(output_dim),
             name=name + '__w_ih'
         )
 
@@ -595,8 +597,8 @@ class MiLSTM:
             shape=(input_dim, output_dim),
             name=name + '__w_ox'
         )
-        self.w_oh = get_weights(
-            shape=(output_dim, output_dim),
+        self.w_oh = create_shared(
+            ortho_weight(output_dim),
             name=name + '__w_oh'
         )
 
@@ -789,3 +791,125 @@ class MultiLayerRNN:
             rnn.fprop(output)
             output = rnn.h
         return output
+
+
+class LNFastLSTM:
+    """Layer normalized FastLSTM."""
+
+    def __init__(
+        self,
+        input_dim,
+        output_dim,
+        batch_input=True,
+        name='lstm',
+    ):
+        """Initialize weights and biases."""
+        self.input_dim = input_dim
+        self.output_dim = output_dim
+        self.batch_input = batch_input
+        if not self.batch_input:
+            raise ValueError('Must have batch input as True')
+
+        self.W = get_weights(
+            shape=(input_dim, output_dim * 4),
+            name=name + '__W'
+        )
+        self.U = create_shared(np.concatenate([
+            ortho_weight(output_dim),
+            ortho_weight(output_dim),
+            ortho_weight(output_dim),
+            ortho_weight(output_dim)
+        ], axis=1), name=name + '_U')
+        self.b = get_bias(output_dim * 4, name=name + '__b')
+
+        self.c_0 = get_bias(output_dim, name=name + '__c_0')
+        self.h_0 = get_bias(output_dim, name=name + '__h_0')
+
+        self.h = None
+
+        # Layer Normalization scale and shift params
+        self.scale_add = 0.
+        self.scale_mul = 1.
+        self.b1 = create_shared(self.scale_add * np.ones(
+            (4 * self.output_dim)
+        ).astype('float32'), name=name + '__b1')
+        self.b2 = create_shared(self.scale_add * np.ones(
+            (4 * self.output_dim)
+        ).astype('float32'), name=name + '__b2')
+        self.b3 = create_shared(self.scale_add * np.ones(
+            (1 * self.output_dim)
+        ).astype('float32'), name=name + '__b3')
+
+        self.s1 = create_shared(self.scale_mul * np.ones(
+            (4 * self.output_dim)
+        ).astype('float32'), name=name + '__s1')
+        self.s2 = create_shared(self.scale_mul * np.ones(
+            (4 * self.output_dim)
+        ).astype('float32'), name=name + '__s2')
+        self.s3 = create_shared(self.scale_mul * np.ones(
+            (1 * self.output_dim)
+        ).astype('float32'), name=name + '__s3')
+
+        self.params = [
+            self.W,
+            self.U,
+            self.b,
+            self.c_0,
+            self.b1,
+            self.s1,
+            self.b2,
+            self.s2,
+            self.b3,
+            self.s3,
+            self.h_0
+        ]
+
+    def _layer_norm(self, x, b, s):
+        self._eps = 1e-5
+        output = (x - x.mean(1)[:, None]) / T.sqrt(
+            (x.var(1)[:, None] + self._eps)
+        )
+        output = s[None, :] * output + b[None, :]
+        return output
+
+    def _partition_weights(self, matrix, n):
+        return matrix[:, n * self.output_dim: (n+1) * self.output_dim]
+
+    def fprop(self, input):
+        """Propogate input through the LSTM."""
+        def recurrence_helper(x_t, c_tm1, h_tm1):
+            x_t = self._layer_norm(x_t, self.b1, self.s1)
+            p = self._layer_norm(x_t + T.dot(h_tm1, self.U), self.b2, self.s2)
+            i_t = T.nnet.sigmoid(
+                self._partition_weights(p, 0)
+            )
+            f_t = T.nnet.sigmoid(
+                self._partition_weights(p, 1)
+            )
+            o_t = T.nnet.sigmoid(
+                self._partition_weights(p, 2)
+            )
+            c_t = T.tanh(
+                self._partition_weights(p, 3)
+            )
+            c_t = self._layer_norm(f_t * c_tm1 + i_t * c_t, self.b3, self.s3)
+            h_t = o_t * T.tanh(c_t)
+
+            return [c_t, h_t]
+
+        pre_activation = T.dot(input.dimshuffle(1, 0, 2), self.W) + self.b
+
+        outputs_info = [
+            T.alloc(x, input.shape[0], self.output_dim) for x in [
+                self.c_0, self.h_0
+            ]
+        ]
+
+        [_, self.h], updates = theano.scan(
+            fn=recurrence_helper,
+            sequences=pre_activation,
+            outputs_info=outputs_info,
+            n_steps=input.shape[1]
+        )
+
+        return self.h
