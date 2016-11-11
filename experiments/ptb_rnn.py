@@ -1,4 +1,5 @@
 """RNN LM on Zaremba's PTB dataset. https://github.com/wojzaremba/lstm."""
+from __future__ import absolute_import
 import theano
 import theano.tensor as T
 import sys
@@ -7,10 +8,10 @@ import numpy as np
 import logging
 import os
 
-sys.path.append('/u/subramas/Research/SanDeepLearn/')
+sys.path.append('/home/subras/Research/SanDeepLearn/')
 
 from recurrent import FastLSTM, LSTM, GRU
-from optimizer import Optimizer
+from optimizers import Optimizer
 from layer import FullyConnectedLayer, EmbeddingLayer
 
 theano.config.floatX = 'float32'
@@ -47,7 +48,7 @@ parser.add_argument(
     required=True
 )
 parser.add_argument(
-    "-h",
+    "-o",
     "--hidden_dim",
     help="hidden dimension",
     required=True
@@ -85,7 +86,7 @@ np.random.seed(seed=int(args.seed))  # set seed for an experiment
 experiment_name = args.experiment_name
 batch_size = int(args.batch_size)
 hidden_dim = int(args.hidden_dim)
-embedding_dim = int(args.embedding_dim)
+embedding_dim = int(args.emb_dim)
 depth = int(args.depth)
 
 if not os.path.exists('log/'):
@@ -109,6 +110,64 @@ console.setFormatter(formatter)
 # add the handler to the root logger
 logging.getLogger('').addHandler(console)
 
+def generate_samples(
+    batch_input
+):
+    """Generate random samples."""
+    decoded_batch = f_eval(
+        batch_input
+    )
+    decoded_batch = np.argmax(decoded_batch, axis=2)
+    for ind, sentence in enumerate(decoded_batch[:10]):
+        logging.info('Src : %s ' % (' '.join([
+            ind2word[x] if x != word2ind['<pad>'] else '' for x in batch_input[ind]]
+        )))
+        logging.info('Sample : %s ' % (' '.join([
+            ind2word[x] if x != word2ind['<pad>'] else '' for x in decoded_batch[ind]]
+        )))
+        logging.info('=======================================================')
+
+def prepare_evaluation_batch(lines, index, batch_size):
+    """Prepare a mini-batch for evaluation."""
+    lines = [['<s>'] + sent[:40] + ['</s>'] for line in lines[index: index + batch_size]]
+    lens = [len(line) for line in lines]
+    max_len = max(lens)
+    lines = [
+        [
+            word2ind[w] if w in src_word2ind else src_word2ind['<unk>']
+            for w in sent
+        ] +
+        [src_word2ind['<pad>']] * (max_src_len - len(sent))
+        for line in lines
+    ]
+    lines = np.array(lines).astype(np.int32)
+    return lines
+
+def decode_batch(sentences):
+    """Decode one mini-batch for source sentences."""
+    prepare_evaluation_batch(
+        src_sentences,
+        src_word2ind
+    )
+    decode_state = np.array(
+        [[tgt_word2ind['<s>']] for _ in src_sentences]
+    ).astype(np.int32)
+    is_decoding = [True] * len(src_sentences)
+    decode_length = 1
+    while any(is_decoding) and decode_length < 25:
+        next_words = f_eval(
+            src_sentences,
+            decode_state,
+            src_lens,
+        )
+        next_words = [x[-1] for x in np.argmax(next_words, axis=2)]
+        is_finished = [word == tgt_word2ind['</s>'] for word in next_words]
+        for ind, item in enumerate(is_finished):
+            if item:
+                is_decoding[ind] = False
+        decode_state = np.c_[decode_state, next_words].astype(np.int32)
+        decode_length += 1
+    return decode_state
 
 def get_minibatch(lines, index, batch_size):
     """Prepare minibatch."""
@@ -138,7 +197,6 @@ def get_minibatch(lines, index, batch_size):
             for l in lens
         ]
     ).astype(np.float32)
-
     return input_lines, output_lines, mask
 
 
@@ -154,20 +212,25 @@ train_lines = [line.strip().split() for line in open(data_path_train, 'r')]
 dev_lines = [line.strip().split() for line in open(data_path_dev, 'r')]
 test_lines = [line.strip().split() for line in open(data_path_test, 'r')]
 
-word2ind = {word: ind for ind, word in enumerate(line) for line in train_lines}
-ind2word = {ind: word for ind, word in enumerate(line) for line in train_lines}
+word2ind = {'<s>': 0, '</s>': 1, '<pad>': 2}
+ind2word = {0: '<s>', 1: '</s>', 2: '<pad>'}
+ind = 3
 
-word2ind['<s>'] = len(word2ind)
-word2ind['</s>'] = len(word2ind) + 1
-ind2word[len(word2ind)] = '<s>'
-ind2word[len(word2ind) + 1] = '</s>'
+for line in train_lines:
+    for word in line:
+        if word not in word2ind:
+            word2ind[word] = ind
+            ind2word[ind] = word
+            ind += 1
+
+logging.info('Found %d words in vocabulary' % (len(word2ind)))
 
 inp_t = np.random.randint(low=1, high=100, size=(5, 10)).astype(np.int32)
 op_t = np.random.randint(low=1, high=100, size=(5, 10)).astype(np.int32)
-mask_t = np.float32(np.random.rand(5, 9).astype(np.float32) > 0.5)
+mask_t = np.float32(np.random.rand(5, 10).astype(np.float32) > 0.5)
 
-x = T.imatrix('X')
-y = T.imatrix('Y')
+x = T.imatrix()
+y = T.imatrix()
 mask = T.fmatrix('Mask')
 
 embedding_layer = EmbeddingLayer(
@@ -266,3 +329,48 @@ logging.info('cost : %.3f' % (cost.eval(
         mask: mask_t,
     }
 )))
+
+logging.info('Compiling updates ...')
+updates = Optimizer(clip=5.0).adam(
+    cost=cost,
+    params=params,
+)
+
+logging.info('Compiling train function ...')
+f_train = theano.function(
+    inputs=[x, y, mask],
+    outputs=cost,
+    updates=updates
+)
+
+logging.info('Compiling eval function ...')
+f_eval = theano.function(
+    inputs=[x],
+    outputs=final_output,
+)
+
+num_epochs = 100
+logging.info('Training network ...')
+for i in range(num_epochs):
+    costs = []
+    for j in xrange(0, len(train_lines), batch_size):
+        inp, op, mask = get_minibatch(
+            train_lines,
+            j,
+            batch_size
+        )
+        #print ' '.join([ind2word[x] for x in inp[0]])
+        #print ' '.join([ind2word[x] for x in op[0]])
+        entropy = f_train(
+            inp,
+            op,
+            mask
+        )
+        costs.append(entropy)
+        logging.info('Epoch : %d Minibatch : %d Loss : %.3f' % (
+            i,
+            j,
+            entropy
+        ))
+        if j % 3200 == 0: 
+            generate_samples(inp)
