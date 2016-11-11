@@ -8,7 +8,7 @@ import numpy as np
 import logging
 import os
 
-sys.path.append('/home/subras/Research/SanDeepLearn/')
+sys.path.append('/u/subramas/Research/SanDeepLearn/')
 
 from recurrent import FastLSTM, LSTM, GRU
 from optimizers import Optimizer
@@ -172,7 +172,8 @@ def decode_batch(sentences):
 def get_minibatch(lines, index, batch_size):
     """Prepare minibatch."""
     lines = [
-        ['<s>'] + line[:40] + ['</s>']
+        #['<s>'] + line[:40] + ['</s>']
+        line[:40]
         for line in lines[index: index + batch_size]
     ]
 

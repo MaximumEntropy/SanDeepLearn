@@ -119,3 +119,44 @@ def get_highway_bias(output_dim, name):
         borrow=True,
         name=name
     )
+
+
+def create_shared(numpy_array, name):
+    """Create theano shared variable."""
+    return theano.shared(
+        numpy_array,
+        borrow=True,
+        name=name
+    )
+
+
+def zero_vector(length):
+    """Zero vector for bias."""
+    return np.zeros((length, )).astype('float32')
+
+
+def ortho_weight(ndim):
+    """Orthogonal weights."""
+    W = np.random.randn(ndim, ndim)
+    u, s, v = np.linalg.svd(W)
+    return u.astype('float32')
+
+
+def norm_weight(nin, nout=None, scale=0.01, ortho=True):
+    """Standard normal weights."""
+    if nout is None:
+        nout = nin
+    if nout == nin and ortho:
+        W = ortho_weight(nin)
+    else:
+        W = scale * np.random.randn(nin, nout)
+    return W.astype('float32')
+
+
+def uniform_weight(nin, nout, scale=None):
+    """Uniform weights."""
+    if scale is None:
+        scale = np.sqrt(6. / (nin + nout))
+
+    W = np.random.uniform(low=-scale, high=scale, size=(nin, nout))
+    return W.astype('float32')

@@ -1,6 +1,6 @@
 """RNN Implementations."""
 
-from utils import get_weights, get_bias
+from utils import get_weights, get_bias, ortho_weight, create_shared
 
 import theano
 import theano.tensor as T
@@ -43,13 +43,13 @@ class RNN:
         else:
             raise NotImplementedError("Unknown activation")
 
-        self.weights = get_weights(
+        self.W = get_weights(
             shape=(input_dim, output_dim),
-            name=name + '__weights'
+            name=name + '__W'
         )
-        self.recurrent_weights = get_weights(
-            shape=(output_dim, output_dim),
-            name=name + '__recurrent_weights'
+        self.U = create_shared(
+            ortho_weight(output_dim),
+            name=name + '__U'
         )
 
         self.bias = get_bias(output_dim, name=name + '__bias')
@@ -61,8 +61,8 @@ class RNN:
         self.h = None
 
         self.params = [
-            self.weights,
-            self.recurrent_weights,
+            self.W,
+            self.U,
             self.bias,
             self.h_0
         ]
@@ -72,8 +72,8 @@ class RNN:
         def recurrence_helper(current_input, recurrent_input):
 
             return self.activation(
-                T.dot(current_input, self.weights) +
-                T.dot(recurrent_input, self.recurrent_weights) +
+                T.dot(current_input, self.W) +
+                T.dot(recurrent_input, self.U) +
                 self.bias
             )
 
@@ -116,12 +116,12 @@ class LSTM:
             shape=(input_dim, output_dim),
             name=name + '__w_fx'
         )
-        self.w_fh = get_weights(
-            shape=(output_dim, output_dim),
+        self.w_fh = create_shared(
+            ortho_weight(output_dim),
             name=name + '__w_fh'
         )
-        self.w_fc = get_weights(
-            shape=(output_dim, output_dim),
+        self.w_fc = create_shared(
+            ortho_weight(output_dim),
             name=name + '__w_fc'
         )
 
@@ -130,12 +130,12 @@ class LSTM:
             shape=(input_dim, output_dim),
             name=name + '__w_ix'
         )
-        self.w_ih = get_weights(
-            shape=(output_dim, output_dim),
+        self.w_ih = create_shared(
+            ortho_weight(output_dim),
             name=name + '__w_ih'
         )
-        self.w_ic = get_weights(
-            shape=(output_dim, output_dim),
+        self.w_ic = create_shared(
+            ortho_weight(output_dim),
             name=name + '__w_ic'
         )
 
@@ -144,12 +144,12 @@ class LSTM:
             shape=(input_dim, output_dim),
             name=name + '__w_ox'
         )
-        self.w_oh = get_weights(
-            shape=(output_dim, output_dim),
+        self.w_oh = create_shared(
+            ortho_weight(output_dim),
             name=name + '__w_oh'
         )
-        self.w_oc = get_weights(
-            shape=(output_dim, output_dim),
+        self.w_oc = create_shared(
+            ortho_weight(output_dim),
             name=name + '__w_oc'
         )
 
@@ -158,8 +158,8 @@ class LSTM:
             shape=(input_dim, output_dim),
             name=name + '__w_cx'
         )
-        self.w_ch = get_weights(
-            shape=(output_dim, output_dim),
+        self.w_ch = create_shared(
+            ortho_weight(output_dim),
             name=name + '__w_ch'
         )
 
@@ -266,8 +266,8 @@ class GRU:
             shape=(input_dim, output_dim),
             name=name + '__w_fx'
         )
-        self.w_zh = get_weights(
-            shape=(output_dim, output_dim),
+        self.w_zh = create_shared(
+            ortho_weight(output_dim),
             name=name + '__w_fh'
         )
 
@@ -275,17 +275,17 @@ class GRU:
             shape=(input_dim, output_dim),
             name=name + '__w_ix'
         )
-        self.w_rh = get_weights(
-            shape=(output_dim, output_dim),
-            name=name + '__w_ih'
+        self.w_rh = create_shared(
+            ortho_weight(output_dim),
+            name=name + '__w_rh'
         )
 
         self.w_ox = get_weights(
             shape=(input_dim, output_dim),
             name=name + '__w_ox'
         )
-        self.w_oh = get_weights(
-            shape=(output_dim, output_dim),
+        self.w_oh = create_shared(
+            ortho_weight(output_dim),
             name=name + '__w_oh'
         )
 
@@ -374,10 +374,12 @@ class FastLSTM:
             shape=(input_dim, output_dim * 4),
             name=name + '__W'
         )
-        self.U = get_weights(
-            shape=(output_dim, output_dim * 4),
-            name=name + '__U'
-        )
+        self.U = create_shared(np.concatenate([
+            ortho_weight(output_dim),
+            ortho_weight(output_dim),
+            ortho_weight(output_dim),
+            ortho_weight(output_dim)
+        ], axis=1), name=name + '_U')
         self.b = get_bias(output_dim * 4, name=name + '__b')
 
         self.c_0 = get_bias(output_dim, name=name + '__c_0')
