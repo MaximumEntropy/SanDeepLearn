@@ -10,9 +10,10 @@ import os
 
 sys.path.append('/u/subramas/Research/SanDeepLearn/')
 
-from recurrent import FastLSTM, LSTM, GRU, FastGRU, MiLSTM, LNFastLSTM, LNFastGRU
+from recurrent import FastLSTM, LSTM, GRU, FastGRU, MiLSTM, LNFastLSTM
 from optimizers import Optimizer
 from layer import FullyConnectedLayer, EmbeddingLayer
+from crf import CRF
 
 theano.config.floatX = 'float32'
 
@@ -124,15 +125,8 @@ def generate_samples(
     decoded_batch = f_eval(
         batch_input
     )
-    decoded_batch = np.argmax(decoded_batch, axis=2)
-    for ind, sentence in enumerate(decoded_batch[:10]):
-        logging.info('Src : %s ' % (' '.join([
-            ind2word[x] if x != word2ind['<pad>'] else '' for x in batch_input[ind]]
-        )))
-        logging.info('Sample : %s ' % (' '.join([
-            ind2word[x] if x != word2ind['<pad>'] else '' for x in decoded_batch[ind]]
-        )))
-        logging.info('=======================================================')
+    logging.info('Src : %s ' % (''.join([ind2word[x] if x in ind2word else '' for x in batch_input])))
+    logging.info('Sample : %s ' % (''.join([ind2word[x] if x in ind2word else '' for x in decoded_batch])))
 
 
 def get_perplexity(dataset='train'):
@@ -144,52 +138,34 @@ def get_perplexity(dataset='train'):
 
     perplexities = []
 
-    for j in xrange(0, len(dataset), batch_size):
-        inp, op, mask = get_minibatch(
+    for j in xrange(len(dataset)):
+        inp, op = get_minibatch(
             dataset,
-            j,
-            batch_size
+            j
         )
 
         decoded_batch_ce = f_ce(
             inp,
-            op,
-            mask
+            op
         )
         perplexities.append(decoded_batch_ce)
 
     return np.exp(np.mean(perplexities))
 
 
-def get_minibatch(lines, index, batch_size):
+def get_minibatch(lines, index):
     """Prepare minibatch."""
-    lines = [
-        line[:40] + ['</s>']
-        for line in lines[index: index + batch_size]
-    ]
+    line = list(lines[index]) + ['</s>']
 
-    lens = [len(line) for line in lines]
-    max_len = max(lens)
+    input_line = np.array(
+        [word2ind[w] if w in word2ind else word2ind['<unk>'] for w in line[:-1]]
+    ).astype(np.int32)
 
-    input_lines = np.array([
-        [word2ind[w] if w in word2ind else word2ind['<unk>'] for w in line[:-1]] +
-        [word2ind['<pad>']] * (max_len - len(line))
-        for line in lines
-    ]).astype(np.int32)
+    output_line = np.array(
+        [word2ind[w] if w in word2ind else word2ind['<unk>'] for w in line[1:]]
+    ).astype(np.int32)
 
-    output_lines = np.array([
-        [word2ind[w] if w in word2ind else word2ind['<unk>'] for w in line[1:]] +
-        [word2ind['<pad>']] * (max_len - len(line))
-        for line in lines
-    ]).astype(np.int32)
-
-    mask = np.array(
-        [
-            ([1] * (l - 1)) + ([0] * (max_len - l))
-            for l in lens
-        ]
-    ).astype(np.float32)
-    return input_lines, output_lines, mask
+    return input_line, output_line
 
 
 cell_hash = {
@@ -198,15 +174,14 @@ cell_hash = {
     'LSTM': LSTM,
     'FastGRU': FastGRU,
     'MiLSTM': MiLSTM,
-    'LNFastLSTM': LNFastLSTM,
-    'LNFastGRU': LNFastGRU
+    'LNFastLSTM': LNFastLSTM
 }
 
 rnn_cell = cell_hash[args.cell_type]
 
-train_lines = [line.strip().split() for line in open(data_path_train, 'r')]
-dev_lines = [line.strip().split() for line in open(data_path_dev, 'r')]
-test_lines = [line.strip().split() for line in open(data_path_test, 'r')]
+train_lines = [line.strip() for line in open(data_path_train, 'r')]
+dev_lines = [line.strip() for line in open(data_path_dev, 'r')]
+test_lines = [line.strip() for line in open(data_path_test, 'r')]
 
 word2ind = {'<s>': 0, '</s>': 1, '<pad>': 2}
 ind2word = {0: '<s>', 1: '</s>', 2: '<pad>'}
@@ -221,13 +196,11 @@ for line in train_lines:
 
 logging.info('Found %d words in vocabulary' % (len(word2ind)))
 
-inp_t = np.random.randint(low=1, high=100, size=(5, 10)).astype(np.int32)
-op_t = np.random.randint(low=1, high=100, size=(5, 10)).astype(np.int32)
-mask_t = np.float32(np.random.rand(5, 10).astype(np.float32) > 0.5)
+inp_t = np.random.randint(low=1, high=20, size=(5,)).astype(np.int32)
+op_t = np.random.randint(low=1, high=20, size=(5)).astype(np.int32)
 
-x = T.imatrix()
-y = T.imatrix()
-mask = T.fmatrix('Mask')
+x = T.ivector()
+y = T.ivector()
 
 embedding_layer = EmbeddingLayer(
     input_dim=len(word2ind),
@@ -239,7 +212,8 @@ rnn_layers = [
     rnn_cell(
         input_dim=embedding_dim,
         output_dim=hidden_dim,
-        name='rnn_0'
+        name='rnn_0',
+        batch_input=False
     )
 ]
 
@@ -247,7 +221,8 @@ rnn_layers += [
     rnn_cell(
         input_dim=hidden_dim,
         output_dim=hidden_dim,
-        name='src_rnn_forward_%d' % (i + 1)
+        name='src_rnn_forward_%d' % (i + 1),
+        batch_input=False
     ) for i in xrange(depth - 1)
 ]
 
@@ -255,11 +230,14 @@ rnn_h_to_vocab = FullyConnectedLayer(
     input_dim=hidden_dim,
     output_dim=len(word2ind),
     batch_normalization=False,
-    activation='softmax',
+    activation='linear',
     name='lstm_h_to_vocab'
 )
 
+crf = CRF(len(word2ind))
+
 params = embedding_layer.params + rnn_h_to_vocab.params
+params += crf.params
 
 for rnn in rnn_layers:
     params += rnn.params
@@ -276,19 +254,15 @@ embeddings = embedding_layer.fprop(x)
 rnn_hidden_states = embeddings
 for rnn in rnn_layers:
     rnn.fprop(rnn_hidden_states)
-    rnn_hidden_states = rnn.h.dimshuffle(1, 0, 2)
+    rnn_hidden_states = rnn.h
 
-proj_layer_input = rnn_hidden_states.reshape(
-    (x.shape[0] * x.shape[1], hidden_dim)
-)
-proj_output_rep = rnn_h_to_vocab.fprop(proj_layer_input)
-final_output = proj_output_rep.reshape(
-    (x.shape[0], x.shape[1], len(word2ind))
-)
-# Clip final out to avoid log problem in cross-entropy
-final_output = T.clip(final_output, 1e-5, 1 - 1e-5)
-
-# Compute cost
+final_output = rnn_h_to_vocab.fprop(rnn_hidden_states)
+final_output_softmax = T.nnet.softmax(T.clip(final_output, 1e-5, 1-1e-5))
+ce = T.nnet.categorical_crossentropy(
+    final_output_softmax,
+    y
+).mean()
+'''
 cost = - (T.log(final_output[
     T.arange(
         embeddings.shape[0]).dimshuffle(0, 'x').repeat(
@@ -301,18 +275,16 @@ cost = - (T.log(final_output[
     ).flatten(),
     y.flatten()
 ]) * mask.flatten()).sum() / T.neq(mask, 0).sum()
-
+'''
+cost = crf.fprop(final_output, y)
 logging.info('Computation Graph Node Shapes ...')
 logging.info('embedding dim : %s ' % (
     embeddings.eval({x: inp_t}).shape,)
 )
 logging.info('encoder forward dim : %s' % (
-    rnn_layers[-1].h.dimshuffle(1, 0, 2).eval({x: inp_t}).shape,)
+    rnn_layers[-1].h.eval({x: inp_t}).shape,)
 )
 logging.info('rnn_hidden_states : %s' % (rnn_hidden_states.eval(
-    {x: inp_t}).shape,)
-)
-logging.info('proj_layer_input : %s' % (proj_layer_input.eval(
     {x: inp_t}).shape,)
 )
 logging.info('final_output : %s' % (final_output.eval(
@@ -322,7 +294,6 @@ logging.info('cost : %.3f' % (cost.eval(
     {
         x: inp_t,
         y: op_t,
-        mask: mask_t,
     }
 )))
 
@@ -334,7 +305,7 @@ updates = Optimizer(clip=5.0).rmsprop(
 
 logging.info('Compiling train function ...')
 f_train = theano.function(
-    inputs=[x, y, mask],
+    inputs=[x, y],
     outputs=cost,
     updates=updates
 )
@@ -342,30 +313,28 @@ f_train = theano.function(
 logging.info('Compiling eval function ...')
 f_eval = theano.function(
     inputs=[x],
-    outputs=final_output,
+    outputs=crf.fprop(input=final_output, ground_truth=None, viterbi=True, return_best_sequence=True, mode='eval'),
 )
 
 logging.info('Compiling cross entropy function ...')
 f_ce = theano.function(
-    inputs=[x, y, mask],
-    outputs=cost
+    inputs=[x, y],
+    outputs=ce
 )
 
-num_epochs = 10
+num_epochs = 100
 logging.info('Training network ...')
 for i in range(num_epochs):
     costs = []
     np.random.shuffle(train_lines)
-    for j in xrange(0, len(train_lines), batch_size):
-        inp, op, mask = get_minibatch(
+    for j in xrange(0, len(train_lines)):
+        inp, op = get_minibatch(
             train_lines,
             j,
-            batch_size
         )
         entropy = f_train(
             inp,
             op,
-            mask
         )
         costs.append(entropy)
         logging.info('Epoch : %d Minibatch : %d Loss : %.3f' % (
@@ -373,7 +342,7 @@ for i in range(num_epochs):
             j,
             entropy
         ))
-        if j % 3200 == 0:
+        if j % 10 == 0:
             generate_samples(inp)
 
     logging.info('Epoch : %d Average perplexity on Train is %.5f ' % (

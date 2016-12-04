@@ -10,9 +10,9 @@ import os
 
 sys.path.append('/u/subramas/Research/SanDeepLearn/')
 
-from recurrent import FastLSTM, LSTM, GRU, FastGRU, MiLSTM, LNFastLSTM, LNFastGRU
+from recurrent import FastLSTM, LSTM, GRU, FastGRU, MiLSTM, LNFastLSTM
 from optimizers import Optimizer
-from layer import FullyConnectedLayer, EmbeddingLayer
+from layer import FullyConnectedLayer, EmbeddingLayer, DropoutLayer
 
 theano.config.floatX = 'float32'
 
@@ -78,7 +78,6 @@ parser.add_argument(
     default=1337
 )
 parser.add_argument(
-    "-drp"
     "--dropout_rate",
     help="dropout rate",
     default=0.0
@@ -94,6 +93,7 @@ batch_size = int(args.batch_size)
 hidden_dim = int(args.hidden_dim)
 embedding_dim = int(args.emb_dim)
 depth = int(args.depth)
+dropout_rate = float(args.dropout_rate)
 
 if not os.path.exists('log/'):
     os.mkdir('log/')
@@ -122,14 +122,15 @@ def generate_samples(
 ):
     """Generate random samples."""
     decoded_batch = f_eval(
-        batch_input
+        batch_input,
+        0
     )
     decoded_batch = np.argmax(decoded_batch, axis=2)
     for ind, sentence in enumerate(decoded_batch[:10]):
-        logging.info('Src : %s ' % (' '.join([
+        logging.info('Src : %s ' % (''.join([
             ind2word[x] if x != word2ind['<pad>'] else '' for x in batch_input[ind]]
         )))
-        logging.info('Sample : %s ' % (' '.join([
+        logging.info('Sample : %s ' % (''.join([
             ind2word[x] if x != word2ind['<pad>'] else '' for x in decoded_batch[ind]]
         )))
         logging.info('=======================================================')
@@ -154,7 +155,8 @@ def get_perplexity(dataset='train'):
         decoded_batch_ce = f_ce(
             inp,
             op,
-            mask
+            mask,
+            0
         )
         perplexities.append(decoded_batch_ce)
 
@@ -164,8 +166,7 @@ def get_perplexity(dataset='train'):
 def get_minibatch(lines, index, batch_size):
     """Prepare minibatch."""
     lines = [
-        line[:40] + ['</s>']
-        for line in lines[index: index + batch_size]
+        list(line) + ['</s>'] for line in lines[index: index + batch_size]
     ]
 
     lens = [len(line) for line in lines]
@@ -198,15 +199,14 @@ cell_hash = {
     'LSTM': LSTM,
     'FastGRU': FastGRU,
     'MiLSTM': MiLSTM,
-    'LNFastLSTM': LNFastLSTM,
-    'LNFastGRU': LNFastGRU
+    'LNFastLSTM': LNFastLSTM
 }
 
 rnn_cell = cell_hash[args.cell_type]
 
-train_lines = [line.strip().split() for line in open(data_path_train, 'r')]
-dev_lines = [line.strip().split() for line in open(data_path_dev, 'r')]
-test_lines = [line.strip().split() for line in open(data_path_test, 'r')]
+train_lines = [line.strip() for line in open(data_path_train, 'r')]
+dev_lines = [line.strip() for line in open(data_path_dev, 'r')]
+test_lines = [line.strip() for line in open(data_path_test, 'r')]
 
 word2ind = {'<s>': 0, '</s>': 1, '<pad>': 2}
 ind2word = {0: '<s>', 1: '</s>', 2: '<pad>'}
@@ -221,12 +221,13 @@ for line in train_lines:
 
 logging.info('Found %d words in vocabulary' % (len(word2ind)))
 
-inp_t = np.random.randint(low=1, high=100, size=(5, 10)).astype(np.int32)
-op_t = np.random.randint(low=1, high=100, size=(5, 10)).astype(np.int32)
+inp_t = np.random.randint(low=1, high=20, size=(5, 10)).astype(np.int32)
+op_t = np.random.randint(low=1, high=20, size=(5, 10)).astype(np.int32)
 mask_t = np.float32(np.random.rand(5, 10).astype(np.float32) > 0.5)
 
-x = T.imatrix()
-y = T.imatrix()
+x = T.imatrix('x')
+y = T.imatrix('y')
+is_train = T.iscalar('is_train')
 mask = T.fmatrix('Mask')
 
 embedding_layer = EmbeddingLayer(
@@ -259,6 +260,10 @@ rnn_h_to_vocab = FullyConnectedLayer(
     name='lstm_h_to_vocab'
 )
 
+dropout_layers = [
+    DropoutLayer(dropout_rate=dropout_rate) for i in xrange(depth)
+]
+
 params = embedding_layer.params + rnn_h_to_vocab.params
 
 for rnn in rnn_layers:
@@ -270,13 +275,21 @@ logging.info('Embedding dim : %d ' % (embedding_dim))
 logging.info('RNN Hidden Dim : %d ' % (hidden_dim))
 logging.info('Batch size : %s ' % (batch_size))
 logging.info('Depth : %s ' % (depth))
+logging.info('Dropout rate : %.5f ' % (dropout_rate))
 
 embeddings = embedding_layer.fprop(x)
 
 rnn_hidden_states = embeddings
-for rnn in rnn_layers:
+for rnn, dropout_layer in zip(rnn_layers, dropout_layers):
     rnn.fprop(rnn_hidden_states)
     rnn_hidden_states = rnn.h.dimshuffle(1, 0, 2)
+    rnn_hidden_states_train = dropout_layer.fprop(rnn_hidden_states)
+    rnn_hidden_states_test = (1. - dropout_layer.dropout_rate) * rnn_hidden_states
+    rnn_hidden_states = T.switch(
+        T.neq(is_train, 0),
+        rnn_hidden_states_train,
+        rnn_hidden_states_test
+    )
 
 proj_layer_input = rnn_hidden_states.reshape(
     (x.shape[0] * x.shape[1], hidden_dim)
@@ -286,7 +299,7 @@ final_output = proj_output_rep.reshape(
     (x.shape[0], x.shape[1], len(word2ind))
 )
 # Clip final out to avoid log problem in cross-entropy
-final_output = T.clip(final_output, 1e-5, 1 - 1e-5)
+final_output = T.clip(final_output, 1e-5, 1-1e-5)
 
 # Compute cost
 cost = - (T.log(final_output[
@@ -307,22 +320,23 @@ logging.info('embedding dim : %s ' % (
     embeddings.eval({x: inp_t}).shape,)
 )
 logging.info('encoder forward dim : %s' % (
-    rnn_layers[-1].h.dimshuffle(1, 0, 2).eval({x: inp_t}).shape,)
+    rnn_layers[-1].h.dimshuffle(1, 0, 2).eval({x: inp_t, is_train: 1}).shape,)
 )
 logging.info('rnn_hidden_states : %s' % (rnn_hidden_states.eval(
-    {x: inp_t}).shape,)
+    {x: inp_t, is_train: 0}).shape,)
 )
 logging.info('proj_layer_input : %s' % (proj_layer_input.eval(
-    {x: inp_t}).shape,)
+    {x: inp_t, is_train: 0}).shape,)
 )
 logging.info('final_output : %s' % (final_output.eval(
-    {x: inp_t}).shape,)
+    {x: inp_t, is_train: 1}).shape,)
 )
 logging.info('cost : %.3f' % (cost.eval(
     {
         x: inp_t,
         y: op_t,
         mask: mask_t,
+        is_train: 1
     }
 )))
 
@@ -334,24 +348,24 @@ updates = Optimizer(clip=5.0).rmsprop(
 
 logging.info('Compiling train function ...')
 f_train = theano.function(
-    inputs=[x, y, mask],
+    inputs=[x, y, mask, is_train],
     outputs=cost,
     updates=updates
 )
 
 logging.info('Compiling eval function ...')
 f_eval = theano.function(
-    inputs=[x],
+    inputs=[x, is_train],
     outputs=final_output,
 )
 
 logging.info('Compiling cross entropy function ...')
 f_ce = theano.function(
-    inputs=[x, y, mask],
+    inputs=[x, y, mask, is_train],
     outputs=cost
 )
 
-num_epochs = 10
+num_epochs = 100
 logging.info('Training network ...')
 for i in range(num_epochs):
     costs = []
@@ -365,7 +379,8 @@ for i in range(num_epochs):
         entropy = f_train(
             inp,
             op,
-            mask
+            mask,
+            1
         )
         costs.append(entropy)
         logging.info('Epoch : %d Minibatch : %d Loss : %.3f' % (

@@ -913,3 +913,156 @@ class LNFastLSTM:
         )
 
         return self.h
+
+
+class LNFastGRU:
+    """Fast implementation of GRUs."""
+
+    # https://github.com/nyu-dl/dl4mt-tutorial/tree/master/session3
+    def __init__(
+        self,
+        input_dim,
+        output_dim,
+        batch_input=True,
+        name='FastGRU'
+    ):
+        """Initialize FastGRU parameters."""
+        self.input_dim = input_dim
+        self.output_dim = output_dim
+        self.batch_input = batch_input
+
+        # Initialize W
+        self.W = get_weights(
+            shape=(input_dim, 2 * output_dim),
+            name=name + '__W'
+        )
+
+        self.b = get_bias(
+            2 * output_dim,
+            name=name + '__b'
+        )
+
+        self.U = theano.shared(np.concatenate([
+            get_weights(
+                shape=(output_dim, output_dim),
+                name=name + '__U1',
+                strategy='orthogonal',
+            ),
+            get_weights(
+                shape=(output_dim, output_dim),
+                name=name + '__U2',
+                strategy='orthogonal',
+            )
+        ], axis=1), borrow=True)
+
+        self.Wx = get_weights(
+            shape=(input_dim, output_dim),
+            name=name + '__Wx'
+        )
+
+        self.bx = get_bias(
+            output_dim,
+            name=name + '__bx'
+        )
+
+        self.Ux = theano.shared(get_weights(
+            shape=(output_dim, output_dim),
+            name=name + '__Ux',
+            strategy='orthogonal'
+        ), borrow=True)
+
+        # Layer Normalization scale and shift params
+        self.scale_add = 0.
+        self.scale_mul = 1.
+        self.b1 = create_shared(self.scale_add * np.ones(
+            (4 * self.output_dim)
+        ).astype('float32'), name=name + '__b1')
+        self.b2 = create_shared(self.scale_add * np.ones(
+            (4 * self.output_dim)
+        ).astype('float32'), name=name + '__b2')
+        self.b3 = create_shared(self.scale_add * np.ones(
+            (1 * self.output_dim)
+        ).astype('float32'), name=name + '__b3')
+        self.b4 = create_shared(self.scale_add * np.ones(
+            (1 * self.output_dim)
+        ).astype('float32'), name=name + '__b4')
+        self.s1 = create_shared(self.scale_mul * np.ones(
+            (4 * self.output_dim)
+        ).astype('float32'), name=name + '__s1')
+        self.s2 = create_shared(self.scale_mul * np.ones(
+            (4 * self.output_dim)
+        ).astype('float32'), name=name + '__s2')
+        self.s3 = create_shared(self.scale_mul * np.ones(
+            (1 * self.output_dim)
+        ).astype('float32'), name=name + '__s3')
+        self.s4 = create_shared(self.scale_mul * np.ones(
+            (1 * self.output_dim)
+        ).astype('float32'), name=name + '__s4')
+
+        self.params = [
+            self.W,
+            self.U,
+            self.b,
+            self.Wx,
+            self.Ux,
+            self.bx,
+            self.b1,
+            self.s1,
+            self.b2,
+            self.s2,
+            self.b3,
+            self.s3,
+            self.b4,
+            self.s4
+        ]
+
+    def _partition_weights(self, matrix, n):
+        if matrix.ndim == 3:
+            return matrix[:, :, n * self.output_dim: (n + 1) * self.output_dim]
+        return matrix[:, n * self.output_dim: (n + 1) * self.output_dim]
+
+    def _layer_norm(self, x, b, s):
+        self._eps = 1e-5
+        output = (x - x.mean(1)[:, None]) / T.sqrt(
+            (x.var(1)[:, None] + self._eps)
+        )
+        output = s[None, :] * output + b[None, :]
+        return output
+
+    def fprop(self, input, input_mask):
+        """Propogate input through the network."""
+        def recurrence_helper(mask, x_t, xx_t, h_tm1):
+            preact = self._layer_norm(T.dot(h_tm1, self.U), self.b3, self.s3)
+            preact += x_t
+
+            # reset and update gates
+            reset = T.nnet.sigmoid(self._partition_weights(preact, 0))
+            update = T.nnet.sigmoid(self._partition_weights(preact, 1))
+            preactx = self._layer_norm(T.dot(h_tm1, self.Ux), self.b4, self.s4)
+            preactx = preactx * reset
+            preactx = preactx + xx_t
+
+            # current hidden state
+            h = T.tanh(preactx)
+
+            h = update * h_tm1 + (1. - update) * h
+            h = mask[:, None] * h + (1. - mask)[:, None] * h_tm1
+
+            return h
+
+        input = input.dimshuffle(1, 0, 2)
+        state_below = self._layer_norm(T.dot(input, self.W) + self.b1, self.s1)
+        state_belowx = self._layer_norm(T.dot(input, self.Wx) + self.bx, self.b2, self.s2)
+
+        sequences = [input_mask, state_below, state_belowx]
+        init_states = [T.alloc(0., input.shape[1], self.output_dim)]
+        shared_vars = [self.U, self.Ux]
+
+        self.h, updates = theano.scan(
+            fn=recurrence_helper,
+            sequences=sequences,
+            outputs_info=init_states,
+            non_sequences=shared_vars,
+            n_steps=input.shape[0],
+        )
+        return self.h

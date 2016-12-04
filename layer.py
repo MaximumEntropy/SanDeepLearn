@@ -56,7 +56,7 @@ class FullyConnectedLayer:
         return linear_activation if self.activation == 'linear' \
             else self.activation(linear_activation)
 
-'''
+
 class DropoutLayer:
     """Dropout Layer."""
 
@@ -70,7 +70,7 @@ class DropoutLayer:
             self.rng.randint(1337)
         )
 
-    def fprop(self, input, deterministic=False):
+    def fprop(self, input):
         """Apply dropout mask to the input."""
         dropout_mask = self.srng.binomial(
             n=1,
@@ -78,9 +78,8 @@ class DropoutLayer:
             size=input.shape,
             dtype=theano.config.floatX
         )
-        output = T.switch()
         return input * dropout_mask
-'''
+
 
 
 class SoftMaxLayer:
