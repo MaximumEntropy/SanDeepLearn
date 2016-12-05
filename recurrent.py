@@ -507,9 +507,9 @@ class FastGRU:
             return matrix[:, :, n * self.output_dim: (n+1) * self.output_dim]
         return matrix[:, n * self.output_dim: (n+1) * self.output_dim]
 
-    def fprop(self, input, input_mask):
+    def fprop(self, input):
         """Propogate input through the network."""
-        def recurrence_helper(mask, x_t, xx_t, h_tm1):
+        def recurrence_helper(x_t, xx_t, h_tm1):
             preact = T.dot(h_tm1, self.U)
             preact += x_t
 
@@ -524,7 +524,6 @@ class FastGRU:
             h = T.tanh(preactx)
 
             h = update * h_tm1 + (1. - update) * h
-            h = mask[:, None] * h + (1. - mask)[:, None] * h_tm1
 
             return h
 
@@ -532,7 +531,7 @@ class FastGRU:
         state_below = T.dot(input, self.W) + self.b
         state_belowx = T.dot(input, self.Wx) + self.bx
 
-        sequences = [input_mask, state_below, state_belowx]
+        sequences = [state_below, state_belowx]
         init_states = [T.alloc(0., input.shape[1], self.output_dim)]
         shared_vars = [self.U, self.Ux]
 
@@ -1029,9 +1028,9 @@ class LNFastGRU:
         output = s[None, :] * output + b[None, :]
         return output
 
-    def fprop(self, input, input_mask):
+    def fprop(self, input):
         """Propogate input through the network."""
-        def recurrence_helper(mask, x_t, xx_t, h_tm1):
+        def recurrence_helper(x_t, xx_t, h_tm1):
             preact = self._layer_norm(T.dot(h_tm1, self.U), self.b3, self.s3)
             preact += x_t
 
@@ -1046,7 +1045,6 @@ class LNFastGRU:
             h = T.tanh(preactx)
 
             h = update * h_tm1 + (1. - update) * h
-            h = mask[:, None] * h + (1. - mask)[:, None] * h_tm1
 
             return h
 
@@ -1054,7 +1052,7 @@ class LNFastGRU:
         state_below = self._layer_norm(T.dot(input, self.W) + self.b1, self.s1)
         state_belowx = self._layer_norm(T.dot(input, self.Wx) + self.bx, self.b2, self.s2)
 
-        sequences = [input_mask, state_below, state_belowx]
+        sequences = [state_below, state_belowx]
         init_states = [T.alloc(0., input.shape[1], self.output_dim)]
         shared_vars = [self.U, self.Ux]
 
