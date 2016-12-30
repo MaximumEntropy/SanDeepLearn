@@ -1064,3 +1064,255 @@ class LNFastGRU:
             n_steps=input.shape[0],
         )
         return self.h
+
+
+class MTPretrainedBiGRU(object):
+    """MT Pretrained BiGRU."""
+
+    def __init__(self, output_dim, model_path=None):
+        """Initialize params."""
+        self.output_dim = output_dim
+        self.model_path = model_path
+        self.name = 'MTPretrainedBiGRU'
+
+        model = np.load(self.model_path)
+        model_files = model.files
+
+        forward_params = [
+            filename for filename in model_files if
+            filename.startswith('encoder_') and
+            not filename.startswith('encoder_r_')
+        ]
+        backward_params = [
+            filename for filename in model_files if
+            filename.startswith('encoder_r_')
+        ]
+        assert len(forward_params) == len(backward_params) == 6
+
+        self.rnn_W_f, self.rnn_Wx_f, self.rnn_U_f, self.rnn_Ux_f, \
+            self.rnn_b_f, self.rnn_bx_f = self._initialize_forward(model)
+        self.rnn_W_b, self.rnn_Wx_b, self.rnn_U_b, self.rnn_Ux_b, \
+            self.rnn_b_b, self.rnn_bx_b = self._initialize_backward(model)
+        self.params = [
+            self.rnn_W_f, self.rnn_Wx_f, self.rnn_U_f,
+            self.rnn_Ux_f, self.rnn_b_f, self.rnn_bx_f
+        ]
+        self.params += [
+            self.rnn_W_b, self.rnn_Wx_b, self.rnn_U_b,
+            self.rnn_Ux_b, self.rnn_b_b, self.rnn_bx_b
+        ]
+
+    def _initialize_forward(self, model):
+        W = create_shared(
+            model['encoder_W'].astype(np.float32),
+            name='{}_W_f'.format(self.name)
+        )
+        Wx = create_shared(
+            model['encoder_Wx'].astype(np.float32),
+            name='{}_Wx_f'.format(self.name)
+        )
+
+        U = create_shared(
+            model['encoder_U'].astype(np.float32),
+            name='{}_U_f'.format(self.name)
+        )
+        Ux = create_shared(
+            model['encoder_Ux'].astype(np.float32),
+            name='{}_Ux_f'.format(self.name)
+        )
+
+        b = create_shared(
+            model['encoder_b'].astype(np.float32),
+            name='{}_b_f'.format(self.name)
+        )
+        bx = create_shared(
+            model['encoder_bx'].astype(np.float32),
+            name='{}_bx_f'.format(self.name)
+        )
+        return W, Wx, U, Ux, b, bx
+
+    def _initialize_backward(self, model):
+        W = create_shared(
+            model['encoder_r_W'].astype(np.float32),
+            name='{}_W_r'.format(self.name)
+        )
+        Wx = create_shared(
+            model['encoder_r_Wx'].astype(np.float32),
+            name='{}_Wx_r'.format(self.name)
+        )
+
+        U = create_shared(
+            model['encoder_r_U'].astype(np.float32),
+            name='{}_U_r'.format(self.name)
+        )
+        Ux = create_shared(
+            model['encoder_r_Ux'].astype(np.float32),
+            name='{}_Ux_r'.format(self.name)
+        )
+
+        b = create_shared(
+            model['encoder_r_b'].astype(np.float32),
+            name='{}_b_r'.format(self.name)
+        )
+        bx = create_shared(
+            model['encoder_r_bx'].astype(np.float32),
+            name='{}_bx_r'.format(self.name)
+        )
+        return W, Wx, U, Ux, b, bx
+
+    def _slice(self, _x, n, dim):
+        if _x.ndim == 3:
+            return _x[:, :, n * dim:(n + 1) * dim]
+        return _x[:, n * dim:(n + 1) * dim]
+
+    def _step_f(
+        self,
+        mask,
+        x_t2gates,
+        x_t2prpsl,
+        h_tm1,
+        U,
+        Ux,
+    ):
+
+        dim = U.shape[0]
+
+        activ_gates = T.nnet.sigmoid(x_t2gates + T.dot(h_tm1, U))
+
+        reset_gate = self._slice(activ_gates, 0, dim)
+        update_gate = self._slice(activ_gates, 1, dim)
+
+        in_prpsl = x_t2prpsl + reset_gate * T.dot(h_tm1, Ux)
+        h_prpsl = T.tanh(in_prpsl)
+
+        h_t = update_gate * h_tm1 + (1. - update_gate) * h_prpsl
+        h_t = mask[:, None] * h_t + (1. - mask)[:, None] * h_tm1
+
+        return h_t
+
+    def _step_b(
+        self,
+        x_t2gates,
+        x_t2prpsl,
+        h_tm1,
+        U,
+        Ux,
+    ):
+
+        dim = U.shape[0]
+
+        activ_gates = T.nnet.sigmoid(x_t2gates + T.dot(h_tm1, U))
+
+        reset_gate = self._slice(activ_gates, 0, dim)
+        update_gate = self._slice(activ_gates, 1, dim)
+
+        in_prpsl = x_t2prpsl + reset_gate * T.dot(h_tm1, Ux)
+        h_prpsl = T.tanh(in_prpsl)
+
+        h_t = update_gate * h_tm1 + (1. - update_gate) * h_prpsl
+
+        return h_t
+
+    def gru_forward(
+        self,
+        state_below,
+        mask=None
+    ):
+        """Forward pass of GRU."""
+        state_below = state_below.dimshuffle(1, 0, 2)  # n_w_s x n_b x inp_s
+        mask_dimshuffle = mask.dimshuffle(1, 0)  # n_w_s x n_b
+
+        nsteps = state_below.shape[0]
+        if state_below.ndim == 4:
+            n_samples = state_below.shape[2]
+        elif state_below.ndim == 3:
+            n_samples = state_below.shape[1]
+        else:
+            n_samples = 1
+
+        dim = self.rnn_Ux_f.shape[1]
+
+        if mask is None:
+            mask = T.alloc(1., state_below.shape[0], 1)
+
+        state_below_ = T.dot(state_below, self.rnn_W_f) + self.rnn_b_f
+        state_belowx = T.dot(state_below, self.rnn_Wx_f) + self.rnn_bx_f
+
+        seqs = [mask_dimshuffle, state_below_, state_belowx]
+
+        if state_below.ndim == 4:
+            init_states = [T.alloc(0., state_below.shape[1], n_samples, dim)]
+        else:
+            init_states = [T.alloc(0., n_samples, dim)]
+
+        _step = self._step_f
+        shared_vars = [self.rnn_U_f, self.rnn_Ux_f]
+
+        h, _ = theano.scan(
+            _step,
+            sequences=seqs,
+            outputs_info=init_states,
+            non_sequences=shared_vars,
+            n_steps=nsteps,
+            strict=True
+        )
+
+        h = h.dimshuffle(1, 0, 2)
+
+        return h * mask.dimshuffle(0, 1, 'x')
+
+    def gru_backward(
+        self,
+        state_below,
+        mask
+    ):
+        """Backward pass of GRU."""
+        state_below = state_below.dimshuffle(1, 0, 2)  # n_w_s x n_b x inp_s
+        state_below = state_below[::-1]
+
+        nsteps = state_below.shape[0]
+        if state_below.ndim == 4:
+            n_samples = state_below.shape[2]
+        elif state_below.ndim == 3:
+            n_samples = state_below.shape[1]
+        else:
+            n_samples = 1
+
+        dim = self.rnn_Ux_f.shape[1]
+
+        if mask is None:
+            mask = T.alloc(1., state_below.shape[0], 1)
+
+        # state_below is the input word embeddings
+        state_below_ = T.dot(state_below, self.rnn_W_b) + self.rnn_b_b
+        state_belowx = T.dot(state_below, self.rnn_Wx_b) + self.rnn_bx_b
+
+        # prepare scan arguments
+        seqs = [state_below_, state_belowx]
+
+        if state_below.ndim == 4:
+            init_states = [T.alloc(0., state_below.shape[1], n_samples, dim)]
+        else:
+            init_states = [T.alloc(0., n_samples, dim)]
+
+        _step = self._step_b
+        shared_vars = [self.rnn_U_b, self.rnn_Ux_b]
+
+        h, _ = theano.scan(
+            _step,
+            sequences=seqs,
+            outputs_info=init_states,
+            non_sequences=shared_vars,
+            n_steps=nsteps,
+            strict=True
+        )
+
+        h = h.dimshuffle(1, 0, 2)
+
+        return h[:, ::-1] * mask.dimshuffle(0, 1, 'x')
+
+    def fprop(self, x, mask=None):
+        """Propagate input through the network."""
+        res_f = self.gru_backward(x, mask=mask)
+        res_b = self.gru_forward(x, mask=mask)
+        return T.concatenate([res_f, res_b], axis=-1)
