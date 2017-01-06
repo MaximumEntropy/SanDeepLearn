@@ -685,7 +685,7 @@ class BatchCRFForwardBackward(object):
             return scores.max(axis=0), scores.argmax(axis=0)
 
         initial = observations[0]
-        alpha, _ = theano.scan(
+        self.alpha, _ = theano.scan(
             fn=recurrence,
             outputs_info=(initial, None),
             sequences=[observations[1:]],
@@ -694,12 +694,12 @@ class BatchCRFForwardBackward(object):
         sequence, _ = theano.scan(
             fn=lambda beta_i, previous: beta_i[previous],
             outputs_info=T.cast(T.argmax(self.alpha[0][-1]), 'int32'),
-            sequences=T.cast(alpha[1][::-1], 'int32')
+            sequences=T.cast(self.alpha[1][::-1], 'int32')
         )
 
         sequence = T.concatenate([
             sequence[::-1],
-            [T.argmax(alpha[0][-1])]
+            [T.argmax(self.alpha[0][-1])]
         ])
 
         return sequence
