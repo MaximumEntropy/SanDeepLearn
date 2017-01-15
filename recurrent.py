@@ -819,6 +819,7 @@ class LNFastLSTM:
             ortho_weight(output_dim),
             ortho_weight(output_dim)
         ], axis=1), name=name + '_U')
+
         self.b = get_bias(output_dim * 4, name=name + '__b')
 
         self.c_0 = get_bias(output_dim, name=name + '__c_0')
@@ -974,25 +975,25 @@ class LNFastGRU:
         self.scale_add = 0.
         self.scale_mul = 1.
         self.b1 = create_shared(self.scale_add * np.ones(
-            (4 * self.output_dim)
+            (2 * self.output_dim)
         ).astype('float32'), name=name + '__b1')
         self.b2 = create_shared(self.scale_add * np.ones(
-            (4 * self.output_dim)
+            (1 * self.output_dim)
         ).astype('float32'), name=name + '__b2')
         self.b3 = create_shared(self.scale_add * np.ones(
-            (1 * self.output_dim)
+            (2 * self.output_dim)
         ).astype('float32'), name=name + '__b3')
         self.b4 = create_shared(self.scale_add * np.ones(
             (1 * self.output_dim)
         ).astype('float32'), name=name + '__b4')
         self.s1 = create_shared(self.scale_mul * np.ones(
-            (4 * self.output_dim)
+            (2 * self.output_dim)
         ).astype('float32'), name=name + '__s1')
         self.s2 = create_shared(self.scale_mul * np.ones(
-            (4 * self.output_dim)
+            (1 * self.output_dim)
         ).astype('float32'), name=name + '__s2')
         self.s3 = create_shared(self.scale_mul * np.ones(
-            (1 * self.output_dim)
+            (2 * self.output_dim)
         ).astype('float32'), name=name + '__s3')
         self.s4 = create_shared(self.scale_mul * np.ones(
             (1 * self.output_dim)
@@ -1031,15 +1032,18 @@ class LNFastGRU:
     def fprop(self, input):
         """Propogate input through the network."""
         def recurrence_helper(x_t, xx_t, h_tm1):
+            x_ = self._layer_norm(x_t, self.b1, self.s1)
+            xx_ = self._layer_norm(xx_t, self.b2, self.s2)
+
             preact = self._layer_norm(T.dot(h_tm1, self.U), self.b3, self.s3)
-            preact += x_t
+            preact += x_
 
             # reset and update gates
             reset = T.nnet.sigmoid(self._partition_weights(preact, 0))
             update = T.nnet.sigmoid(self._partition_weights(preact, 1))
             preactx = self._layer_norm(T.dot(h_tm1, self.Ux), self.b4, self.s4)
             preactx = preactx * reset
-            preactx = preactx + xx_t
+            preactx = preactx + xx_
 
             # current hidden state
             h = T.tanh(preactx)
@@ -1049,18 +1053,16 @@ class LNFastGRU:
             return h
 
         input = input.dimshuffle(1, 0, 2)
-        state_below = self._layer_norm(T.dot(input, self.W) + self.b1, self.s1)
-        state_belowx = self._layer_norm(T.dot(input, self.Wx) + self.bx, self.b2, self.s2)
+        state_below = T.dot(input, self.W) + self.b
+        state_belowx = T.dot(input, self.Wx) + self.bx
 
         sequences = [state_below, state_belowx]
         init_states = [T.alloc(0., input.shape[1], self.output_dim)]
-        shared_vars = [self.U, self.Ux]
 
         self.h, updates = theano.scan(
             fn=recurrence_helper,
             sequences=sequences,
             outputs_info=init_states,
-            non_sequences=shared_vars,
             n_steps=input.shape[0],
         )
         return self.h
